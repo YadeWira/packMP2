@@ -17,9 +17,11 @@ OBJECTS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SOURCES))
 
 TARGET  = unpackmp2
 
-# TCAM2 sources
+# TCAM2 sources (links with unpackmp2 objects for packPreprocess/fromPP)
 TCAM2_SRC = $(SRCDIR)/tcam2.c $(SRCDIR)/tcam2_enc.c $(SRCDIR)/tcam2_dec.c
-TCAM2_OBJ = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(TCAM2_SRC))
+TCAM2_OBJ = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(TCAM2_SRC)) \
+            $(OBJDIR)/globals.o $(OBJDIR)/frame.o $(OBJDIR)/bitio.o \
+            $(OBJDIR)/pack.o $(OBJDIR)/unpack.o
 TCAM2     = tcam2
 
 # lpaq compressors

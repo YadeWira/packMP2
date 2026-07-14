@@ -1,6 +1,6 @@
-/* TCAM2 decoder — zstd decompress.
+/* TCAM2 decoder — zstd decompress + unpack_from_pp (reverse preprocessing).
    Copyright (C) 2026 Tovy. GPLv3. */
-#include "tcam2.h"
+#include "unpackmp2.h"
 #include <zstd.h>
 
 int tcam2_decompress(FILE *in, FILE *out) {
@@ -11,9 +11,10 @@ int tcam2_decompress(FILE *in, FILE *out) {
     while((c=getc(in))!=EOF){if(csz>=ccap){ccap*=2;cmp=realloc(cmp,ccap);}cmp[csz++]=c;}
     unsigned long long dsz=ZSTD_getFrameContentSize(cmp,csz);
     if(dsz==ZSTD_CONTENTSIZE_ERROR||dsz==ZSTD_CONTENTSIZE_UNKNOWN)dsz=osz;
-    unsigned char*data=malloc(dsz);if(!data){free(cmp);return 1;}
-    long act=ZSTD_decompress(data,dsz,cmp,csz);free(cmp);
-    if(ZSTD_isError(act)||act!=(long)dsz){free(data);return 1;}
-    fwrite(data,1,dsz,out);free(data);
-    return 0;
+    unsigned char*pp=malloc(dsz);if(!pp){free(cmp);return 1;}
+    long act=ZSTD_decompress(pp,dsz,cmp,csz);free(cmp);
+    if(ZSTD_isError(act)||act!=(long)dsz){free(pp);return 1;}
+    int rc = unpack_from_pp(pp, dsz, out);
+    free(pp);
+    return rc;
 }

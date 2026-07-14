@@ -1,20 +1,30 @@
-/* TCAM2 encoder — zstd compression on um2 data.
+/* TCAM2 encoder — calls pack_preprocess() (proven read logic) + zstd.
    Copyright (C) 2026 Tovy. GPLv3. */
-#include "tcam2.h"
+#include "unpackmp2.h"
 #include <zstd.h>
 
 int tcam2_compress(FILE *in, FILE *out) {
-    long sz=0,cap=65536;unsigned char*data=malloc(cap);if(!data)return 1;int c;
-    while((c=getc(in))!=EOF){if(sz>=cap){cap*=2;data=realloc(data,cap);}data[sz++]=c;}
+    /* Use pack_preprocess() — proven correct, same read logic as pack() */
+    unsigned char *pp = NULL;
+    long pp_size = 0;
+    int rc = pack_preprocess(in, &pp, &pp_size);
+    if (rc != 0 || !pp) { free(pp); return 1; }
+
+    /* Write TCAM2 header */
     putc('T',out);putc('C',out);putc('A',out);putc('M',out);putc('2',out);
-    putc((sz>>24)&0xFF,out);putc((sz>>16)&0xFF,out);
-    putc((sz>>8)&0xFF,out);putc(sz&0xFF,out);
-    long bound=ZSTD_compressBound(sz);
-    unsigned char*zout=malloc(bound);if(!zout){free(data);return 1;}
-    long csz=ZSTD_compress(zout,bound,data,sz,1);
-    if(ZSTD_isError(csz)){free(data);free(zout);return 1;}
-    fwrite(zout,1,csz,out);free(zout);free(data);
-    fprintf(stderr,"TCAM2: %ld -> %ld bytes (%.1f%%)\n",
-            sz,ftell(out),100.0*ftell(out)/(sz?sz:1));
+    putc((pp_size>>24)&0xFF,out);putc((pp_size>>16)&0xFF,out);
+    putc((pp_size>>8)&0xFF,out);putc(pp_size&0xFF,out);
+
+    /* zstd compress */
+    long bound = ZSTD_compressBound(pp_size);
+    unsigned char *zout = malloc(bound);
+    if (!zout) { free(pp); return 1; }
+    long csz = ZSTD_compress(zout, bound, pp, pp_size, 1);
+    if (ZSTD_isError(csz)) { free(pp); free(zout); return 1; }
+    fwrite(zout, 1, csz, out);
+    free(zout); free(pp);
+
+    fprintf(stderr, "TCAM2: %ld -> %ld bytes (%.1f%%)\n",
+            pp_size, ftell(out), 100.0 * ftell(out) / (pp_size ? pp_size : 1));
     return 0;
 }
