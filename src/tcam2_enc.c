@@ -1,5 +1,5 @@
 /*  TCAM2 encoder — zlib deflate on um2 data.
-    Domain-aware preprocessing (scalefactor delta, etc.) to be added.
+    Domain-aware preprocessing (scalefactor delta, etc.) pending.
     Copyright (C) 2026 Tovy. GPLv3.
 */
 
@@ -7,7 +7,7 @@
 #include <zlib.h>
 
 int tcam2_compress(FILE *in, FILE *out) {
-    /* Read all input (works with both files and pipes) */
+    /* Read all input (works with pipes) */
     long size = 0, cap = 65536;
     unsigned char *data = (unsigned char*)malloc(cap);
     if (!data) return 1;
