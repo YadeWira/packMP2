@@ -312,12 +312,16 @@ static void write_pp_block(unsigned char **out, int nf, int *hw,
     *o++ = nf>>8; *o++ = nf&0xFF;
     for(frm=0;frm<nf;frm++){unpackmp2_t*u=&UM2_ARRAY[frm];*o++=hw[frm]?1:0;
         if(hw[frm]){memcpy(o,u->fb,4);o+=4;}}
-    for(i=0;i<MAX_SBLIMIT;i++)for(frm=0;frm<nf;frm++){unpackmp2_t*u=&UM2_ARRAY[frm];
-        unsigned char ba=(u->bitalloc2BITS[1][i]<<4)|u->bitalloc2BITS[0][i];int same=0;
-        if(frm>0){unpackmp2_t*pr=&UM2_ARRAY[frm-1];
-            if(ba==(unsigned char)((pr->bitalloc2BITS[1][i]<<4)|pr->bitalloc2BITS[0][i]))same=1;}
-        else if(prev){if(ba==(unsigned char)((prev->bitalloc2BITS[1][i]<<4)|prev->bitalloc2BITS[0][i]))same=1;}
-        *o++=same?0:1;if(!same)*o++=ba;}
+    /* Bit alloc flags: per subband, per frame. Only subbands within
+       the frame's sbLimit are encoded. Uses sbLimit from frame header. */
+    for(frm=0;frm<nf;frm++){unpackmp2_t*u=&UM2_ARRAY[frm];
+        *o++=u->sbLimit; /* store sbLimit so decoder knows how many subbands */
+        for(i=0;i<u->sbLimit;i++){
+            unsigned char ba=(u->bitalloc2BITS[1][i]<<4)|u->bitalloc2BITS[0][i];int same=0;
+            if(frm>0){unpackmp2_t*pr=&UM2_ARRAY[frm-1];
+                if(i<pr->sbLimit && ba==(unsigned char)((pr->bitalloc2BITS[1][i]<<4)|pr->bitalloc2BITS[0][i]))same=1;}
+            else if(prev){if(i<prev->sbLimit && ba==(unsigned char)((prev->bitalloc2BITS[1][i]<<4)|prev->bitalloc2BITS[0][i]))same=1;}
+            *o++=same?0:1;if(!same)*o++=ba;}}
     for(i=0;i<MAX_SBLIMIT;i++)for(frm=0;frm<nf;frm++){unpackmp2_t*u=&UM2_ARRAY[frm];
         if(i<u->sbLimit)for(j=0;j<u->numChannels;j++)if(u->bitalloc2[j][i]!=NULL)*o++=u->scfsiBITS[j][i];}
     for(i=0;i<MAX_SBLIMIT;i++)for(frm=0;frm<nf;frm++){unpackmp2_t*u=&UM2_ARRAY[frm];

@@ -330,17 +330,21 @@ static int read_pp_block(unsigned char **p, unsigned char *end,
 
     for(frm=0;frm<nf;frm++){unpackmp2_t*u=&UM2_ARRAY[frm];if(s>=end)return -1;hw[frm]=*s++;
         if(hw[frm]){if(s+4>end)return -1;u->fb[0]=s[0];u->fb[1]=s[1];u->fb[2]=s[2];u->fb[3]=s[3];s+=4;}
-        else{if(frm==0)return -1;memcpy(u->fb,(u-1)->fb,4);}extractFrameHeaderInfo(u);}
-    for(i=0;i<MAX_SBLIMIT;i++)for(frm=0;frm<nf;frm++){unpackmp2_t*u=&UM2_ARRAY[frm];
-        if(s>=end)return -1;int ex=*s++;unsigned char ba;
-        if(ex){if(s>=end)return -1;ba=*s++;}
-        else{if(frm>0){unpackmp2_t*pr=&UM2_ARRAY[frm-1];
-            ba=(pr->bitalloc2BITS[1][i]<<4)|pr->bitalloc2BITS[0][i];}
-            else if(prev){ba=(prev->bitalloc2BITS[1][i]<<4)|prev->bitalloc2BITS[0][i];}else ba=0;}
-        if(i<u->sbLimit){const sballoc_t***alc=ALLOCTABS[u->allocTabNum>>1];
-            u->bitalloc2BITS[0][i]=ba&0x0F;u->bitalloc2[0][i]=alc[i][ba&0x0F];
-            if(i<u->jsBound){u->bitalloc2BITS[1][i]=ba>>4;u->bitalloc2[1][i]=alc[i][ba>>4];}
-            else{u->bitalloc2[1][i]=u->bitalloc2[0][i];u->bitalloc2BITS[1][i]=u->bitalloc2BITS[0][i];}}}
+        else{if(frm==0){if(!prev)return -1;memcpy(u->fb,prev->fb,4);}
+             else memcpy(u->fb,(u-1)->fb,4);}extractFrameHeaderInfo(u);}
+    /* Bit allocs: sbLimit per frame + flags for subbands within limit */
+    for(frm=0;frm<nf;frm++){unpackmp2_t*u=&UM2_ARRAY[frm];
+        if(s>=end)return -1;int lim=*s++;
+        for(i=0;i<lim;i++){
+            if(s>=end)return -1;int ex=*s++;unsigned char ba;
+            if(ex){if(s>=end)return -1;ba=*s++;}
+            else{if(frm>0){unpackmp2_t*pr=&UM2_ARRAY[frm-1];
+                ba=(pr->bitalloc2BITS[1][i]<<4)|pr->bitalloc2BITS[0][i];}
+                else if(prev){ba=(prev->bitalloc2BITS[1][i]<<4)|prev->bitalloc2BITS[0][i];}else ba=0;}
+            if(i<u->sbLimit){const sballoc_t***alc=ALLOCTABS[u->allocTabNum>>1];
+                u->bitalloc2BITS[0][i]=ba&0x0F;u->bitalloc2[0][i]=alc[i][ba&0x0F];
+                if(i<u->jsBound){u->bitalloc2BITS[1][i]=ba>>4;u->bitalloc2[1][i]=alc[i][ba>>4];}
+                else{u->bitalloc2[1][i]=u->bitalloc2[0][i];u->bitalloc2BITS[1][i]=u->bitalloc2BITS[0][i];}}}}
     for(i=0;i<MAX_SBLIMIT;i++)for(frm=0;frm<nf;frm++){unpackmp2_t*u=&UM2_ARRAY[frm];
         if(i<u->sbLimit)for(j=0;j<u->numChannels;j++)if(u->bitalloc2[j][i]!=NULL)
         {if(s>=end)return -1;u->scfsiBITS[j][i]=*s++;}}
