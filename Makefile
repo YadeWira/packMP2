@@ -17,10 +17,9 @@ OBJECTS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SOURCES))
 
 TARGET  = unpackmp2
 
-# TCAM2 sources (reuses globals.o + frame.o from unpackmp2)
+# TCAM2 sources
 TCAM2_SRC = $(SRCDIR)/tcam2.c $(SRCDIR)/tcam2_enc.c $(SRCDIR)/tcam2_dec.c
-TCAM2_OBJ = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(TCAM2_SRC)) \
-            $(OBJDIR)/globals.o $(OBJDIR)/frame.o
+TCAM2_OBJ = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(TCAM2_SRC))
 TCAM2     = tcam2
 
 # lpaq compressors
@@ -35,7 +34,7 @@ $(TARGET): $(OBJECTS)
 	$(CC) $(OBJECTS) $(LDFLAGS) -o $@
 
 $(TCAM2): $(TCAM2_OBJ)
-	$(CC) $(TCAM2_OBJ) $(LDFLAGS) -lz -o $@
+	$(CC) $(TCAM2_OBJ) $(LDFLAGS) -lzstd -o $@
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.c $(SRCDIR)/unpackmp2.h | $(OBJDIR)
 	$(CC) $(CFLAGS) -c $< -o $@
