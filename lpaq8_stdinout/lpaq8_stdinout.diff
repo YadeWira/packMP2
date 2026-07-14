@@ -1,0 +1,119 @@
+--- lpaq8.cpp	2007-12-10 11:40:18.000000000 +0100
++++ lpaq8_stdinout.cpp	2009-10-04 16:13:26.343750000 +0200
+@@ -1,3 +1,7 @@
++//modified by Michael Henke, 2009-10-04 (uncompressed input/output via stdin/stdout)
++//Win32 executable compiled with MinGW gcc 4.4.0
++//g++ lpaq8_stdinout.cpp -o lpaq8 -O2 -fomit-frame-pointer -march=i686 -static-libgcc -s
++
+ /*	lpaq8.cpp file compressor, September 29, 2007.
+ (C) 2007, Matt Mahoney, matmahoney@yahoo.com
+ 	  Alexander Ratushnyak, artest@inbox.ru
+@@ -173,6 +177,14 @@
+ #define NDEBUG  // remove for debugging
+ #include <assert.h>
+ 
++#ifdef WIN32
++# include <fcntl.h>
++# include <io.h>
++# define SET_BINARY_MODE(file) setmode(fileno(file), O_BINARY)
++#else
++# define SET_BINARY_MODE(file)
++#endif
++
+ // 8, 16, 32 bit unsigned types (adjust as appropriate)
+ typedef unsigned char  U8;
+ typedef unsigned short U16;
+@@ -339,7 +351,7 @@
+ 
+ // Error handler: print message if any, and exit
+ void quit(const char* message=0) {
+-  if (message) printf("%s\n", message);
++  if (message) fprintf(stderr, "%s\n", message);
+   exit(1);
+ }
+ 
+@@ -1404,12 +1416,14 @@
+ 
+   // Check arguments
+   if (argc!=4 || !isdigit(argv[1][0]) && argv[1][0]!='d') {
+-    printf(
++    fprintf(stderr,
+ 	"lpaq8 file compressor (C) 2007, Matt Mahoney\n"
+ 	"Licensed under GPL, http://www.gnu.org/copyleft/gpl.html\n"
+ 	"\n"
+ 	"To compress:   lpaq8 N input output  (N=0..9, uses 6+3*2^N MB)\n"
+-	"To decompress: lpaq8 d input output  (needs same memory)\n");
++    "               (use \"-\" for input in order to select stdin)\n"
++	"To decompress: lpaq8 d input output  (needs same memory)\n"
++    "               (use \"-\" for output in order to select stdout)\n");
+     return 1;
+   }
+ 
+@@ -1417,18 +1431,22 @@
+   clock_t start=clock();
+ 
+   // Open input file
+-  FILE *in=fopen(argv[2], "rb"),  *out=0;
++  FILE *in=(strcmp(argv[2], "-")==0 ? stdin : fopen(argv[2], "rb")),  *out=0;
+   if (!in) perror(argv[2]), exit(1);
++  SET_BINARY_MODE(stdin);
+ 
+   // Compress
+   if (isdigit(argv[1][0])) {
+ #ifndef WITHOUT_COMPRESSOR
+     MEM=1<<(argv[1][0]-'0'+20);
+ 
+-    fseek(in, 0, SEEK_END);
+-    long size=ftell(in);
+-    if (size<0 || size>=0x7FFFFFFF) quit("input file too big");
+-    fseek(in, 0, SEEK_SET);
++    long size=0;
++    if (in != stdin) {
++      fseek(in, 0, SEEK_END);
++      size=ftell(in);
++      if (size<0 || size>=0x7FFFFFFF) quit("input file too big");
++      fseek(in, 0, SEEK_SET);
++    }
+ 
+       uncompressed=in;
+       {	// a better data detection algorithm will be here in future
+@@ -1457,6 +1475,7 @@
+     Encoder e(COMPRESS, out);
+     int c;
+     while ((c=do_getc())!=EOF) {
++      ++size;
+       e.compress(c);
+ 	if ( (pos&(256*1024-1))==0 )
+ #ifndef WIKI
+@@ -1468,6 +1487,11 @@
+ 		for (DP_SHIFT++, c=0; c<MI*MC; ++c)	mxr_wx[c] *= 2;
+     }
+     e.flush();
++    if (in == stdin) {
++      if ((fseek(out,4,SEEK_SET)!=0) || (fprintf(out,"%c%c%c%c",size>>24,size>>16,size>>8,size)<0))
++        quit("can't update size in output file.");
++      fseek(out,0,SEEK_END);
++    }
+ #endif
+   }
+ 
+@@ -1495,8 +1519,9 @@
+ #endif
+ 
+     // Decompress
+-    out=fopen(argv[3], "wb");
++    out=(strcmp(argv[3], "-")==0 ? stdout : fopen(argv[3], "wb"));
+     if (!out) perror(argv[3]), exit(1);
++    SET_BINARY_MODE(stdout);
+     Encoder e(DECOMPRESS, in);
+ 
+       uncompressed=out;
+@@ -1534,7 +1559,7 @@
+   // Report result
+   assert(in);
+   assert(out);
+-  printf("%ld -> %ld in %1.3f sec. using %d MB memory\n", ftell(in), ftell(out),
++  fprintf(stderr,"%ld -> %ld in %1.3f sec. using %d MB memory\n", ftell(in), ftell(out),
+ 	double(clock()-start)/CLOCKS_PER_SEC, mem_usage>>20);
+ 
+   return 0;

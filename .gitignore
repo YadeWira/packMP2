@@ -1,0 +1,17 @@
+# Build artifacts
+*.o
+*.exe
+unpackmp2
+
+# Backup files
+*~
+*.swp
+*.orig
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
