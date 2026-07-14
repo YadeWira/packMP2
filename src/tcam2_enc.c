@@ -15,7 +15,7 @@ int tcam2_compress(FILE *in, FILE *out) {
     putc((pp_size>>24)&0xFF,out);putc((pp_size>>16)&0xFF,out);
     putc((pp_size>>8)&0xFF,out);putc(pp_size&0xFF,out);
 
-    /* zstd compress */
+    /* zstd compress (level 1 for speed) */
     long bound = ZSTD_compressBound(pp_size);
     unsigned char *zout = malloc(bound);
     if (!zout) { free(pp); return 1; }
