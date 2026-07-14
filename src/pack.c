@@ -1,9 +1,23 @@
 /*  unpackmp2 - lossless transformation of MPEG audio Layer II data
-    Copyright (C) 2009 Michael Henke
+    Copyright (C) 2009, 2010 Michael Henke
     See unpackmp2.h / GPLv3 for license details.
 */
 
 #include "unpackmp2.h"
+
+/* ---- copyData: copy length-prefixed byte block from infile to outfile ---- */
+static int copyData(FILE* infile, FILE* outfile) {
+    U32 tocopy = 0, i;
+    /* read 4-byte big-endian length */
+    for (i = 0; i < 4; ++i) { tocopy <<= 8; tocopy |= getc(infile); }
+    if (feof(infile)) { return 1; }     /* error: unexpected EOF */
+    /* copy bytes verbatim */
+    for (i = 0; i < tocopy; ++i) {
+        putc(getc(infile), outfile);
+        if (feof(infile) || ferror(outfile)) { return 2; }      /* error */
+    }
+    return 0;   /* OK */
+}
 
 /* Re-encode one unpacked frame back into packed MP2 bitstream format. */
 void packFrame(unpackmp2_t* u) {
@@ -68,23 +82,40 @@ void packFrame(unpackmp2_t* u) {
     }
 }
 
-/* Read unpacked um2 format from infile, repack to mp2, write to outfile. */
+/* Read um2 v2 from infile, repack to mp2, write to outfile.
+   Preserves non-audio data (preamble, filler, trailer) for byte-exact roundtrip. */
 int pack(FILE* infile, FILE* outfile) {
-    /* check um2 file header */
-    if ((getc(infile)!='u') || (getc(infile)!='m') || (getc(infile)!='2') || (getc(infile)!='\1')) {
+    /* check um2 v2 file header */
+    if ((getc(infile)!='u') || (getc(infile)!='m') || (getc(infile)!='2') || (getc(infile)!=UM2_VERSION)) {
         fprintf(stderr, "NOT AN UNPACKED MP2 FILE. (missing um2 file header)\n");
+        return 5;
+    }
+
+    /* copy non-audio data before first frame (preamble) */
+    if (copyData(infile, outfile) != 0) {
+        fprintf(stderr, "error: copy non-audio data before first frame\n");
         return 5;
     }
 
     int framecount = 0;
     for (;;) {
-        int frm, i, j, q, bits;
         int framesInBlock;
+        int frm, i, j, q, bits;
 
         /* ----- read a block of frames from input file ----- */
         framesInBlock = (getc(infile)<<8) | getc(infile);
-        if ((framesInBlock == 0) || (feof(infile))) {
-            return 0;   /* EOF (expected) */
+        if (feof(infile)) {
+            fprintf(stderr, "error: EOF while reading frames_in_block! "
+                            "(corrupted um2 file or bug?)\n");
+            return 5;
+        }
+        if (framesInBlock == 0) {   /* no more input data */
+            /* copy non-audio data after last frame (trailer) */
+            if (copyData(infile, outfile) != 0) {
+                fprintf(stderr, "error: copy non-audio data after last frame\n");
+                return 5;
+            }
+            return 0;
         }
         if (framesInBlock > MAX_FRAMES_PER_BLOCK) {
             fprintf(stderr, "error: frames_in_block(%d) is greater than MAX_FRAMES_PER_BLOCK(%d)\n",
@@ -139,26 +170,32 @@ int pack(FILE* infile, FILE* outfile) {
             return 5;
         }
 
-        /* read scalefactor selection info and scalefactors */
+        /* read scalefactor selection info */
         for (i = 0; i < MAX_SBLIMIT; i++) {
             for (frm = 0; frm < framesInBlock; frm++) {
                 unpackmp2_t* u = &UM2_ARRAY[frm];
                 if (i < u->sbLimit) {
                     for (j = 0; j < u->numChannels; j++) {
                         if (u->bitalloc2[j][i] != NULL) {
-                            int b = getc(infile);
-                            if (b == EOF) break;
-                            u->scfsiBITS[j][i] = (b>>6) & 3;
-                            u->scaleBITS[j][0][i] = b & 0x3F;
+                            u->scfsiBITS[j][i] = getc(infile);
+                        }
+                    }
+                }
+            }
+        }
+
+        /* read scalefactors (each as raw byte) */
+        for (i = 0; i < MAX_SBLIMIT; i++) {
+            for (frm = 0; frm < framesInBlock; frm++) {
+                unpackmp2_t* u = &UM2_ARRAY[frm];
+                if (i < u->sbLimit) {
+                    for (j = 0; j < u->numChannels; j++) {
+                        if (u->bitalloc2[j][i] != NULL) {
+                            u->scaleBITS[j][0][i] = getc(infile);
                             switch (u->scfsiBITS[j][i]) {
                             case 0:
-                                b = getc(infile);
-                                u->scaleBITS[j][1][i] = b & 0x3F;
-                                if (b>>7 != 0) {
-                                    u->scaleBITS[j][2][i] = u->scaleBITS[j][0][i];
-                                } else {
-                                    u->scaleBITS[j][2][i] = getc(infile);
-                                }
+                                u->scaleBITS[j][1][i] = getc(infile);
+                                u->scaleBITS[j][2][i] = getc(infile);
                                 break;
                             case 1:
                                 u->scaleBITS[j][2][i] = getc(infile);
@@ -212,6 +249,22 @@ int pack(FILE* infile, FILE* outfile) {
             fprintf(stderr, "error: EOF while reading samples! (corrupted um2 file or bug?)\n");
             return 5;
         }
+
+        /* repack mp2 frames; read non-audio "filler" data back into the packed frames */
+        for (frm = 0; frm < framesInBlock; frm++) {
+            unpackmp2_t* u = &UM2_ARRAY[frm];
+            packFrame(u);
+            if (u->hdrLength > u->fbpos>>3) {
+                u->fb[u->fbpos>>3] |= getc(infile);
+                for (j = (u->fbpos>>3)+1; j < u->hdrLength; j++) {
+                    u->fb[j] = getc(infile);
+                }
+            }
+        }
+        if (feof(infile)) {
+            fprintf(stderr, "error: EOF while reading filler! (corrupted um2 file or bug?)\n");
+            return 5;
+        }
         if (ferror(infile)) {
             perror("read unpacked frames");
             return 5;
@@ -219,10 +272,8 @@ int pack(FILE* infile, FILE* outfile) {
 
         /* ----- write packed data to output file ----- */
         for (frm = 0; frm < framesInBlock; frm++) {
-            unpackmp2_t* u = &UM2_ARRAY[frm];
-            packFrame(u);
-            if ((fwrite(u->fb, 1, u->hdrLength, outfile) != (unsigned)(u->hdrLength))
-                || ferror(outfile)) {
+            const unpackmp2_t* u = &UM2_ARRAY[frm];
+            if ((fwrite(u->fb, 1, u->hdrLength, outfile) != u->hdrLength) || ferror(outfile)) {
                 perror("write mp2 frame");
                 return 5;
             }

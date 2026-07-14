@@ -39,6 +39,8 @@ typedef unsigned int U32;   /* 32 bit unsigned integer */
 
 #define MAX_SBLIMIT 30
 
+#define UM2_VERSION  '\2'  /* um2 file format version (v1.2: byte-exact) */
+
 /* MPEG frame header lookup tables */
 extern const char  FRMHDR_LSF[4];
 extern const int   FRMHDR_FREQUENCY[4];
