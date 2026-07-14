@@ -111,35 +111,17 @@ int um2_parse_block(unsigned char **p, unsigned char *end,
                     }
             }
 
-    /* Compute fbpos + capture filler */
+    /* Compute fbpos via packFrame() (canonical, proven correct) + capture filler */
     for (frm = 0; frm < nf; frm++) {
         unpackmp2_t *u = &UM2_ARRAY[frm];
-        unsigned pos = 32 + (u->hdrHasCrc ? 16 : 0);
-        const char *ab = ALLOCTAB_BITS[u->allocTabNum >> 1];
-        int ii, jj, qq;
-        for (ii = 0; ii < u->sbLimit; ii++)
-            for (jj = 0; jj < ((ii < u->jsBound) ? 2 : 1); jj++) pos += (unsigned)ab[ii];
-        for (ii = 0; ii < u->sbLimit; ii++)
-            for (jj = 0; jj < u->numChannels; jj++)
-                if (u->bitalloc2[jj][ii] != NULL) pos += 2;
-        for (ii = 0; ii < u->sbLimit; ii++)
-            for (jj = 0; jj < u->numChannels; jj++)
-                if (u->bitalloc2[jj][ii] != NULL) {
-                    pos += 6;
-                    switch (u->scfsiBITS[jj][ii]) {
-                    case 0: pos += 12; break;
-                    case 1: case 3: pos += 6; break;
-                    }
-                }
-        for (qq = 0; qq < 36; qq += 3)
-            for (ii = 0; ii < u->sbLimit; ii++)
-                for (jj = 0; jj < ((ii < u->jsBound) ? 2 : 1); jj++) {
-                    const sballoc_t *ba2 = u->bitalloc2[jj][ii];
-                    if (ba2) { pos += (unsigned)ba2->bits;
-                        if (ba2->steps == 0) pos += 2u * (unsigned)ba2->bits; }
-                }
-        u->fbpos = pos;
-        int flen = u->hdrLength - (pos>>3);
+        /* Save frame buffer region that packFrame() modifies */
+        unsigned char saved[1792];
+        memcpy(saved, u->fb, sizeof(u->fb));
+        packFrame(u);  /* computes correct fbpos */
+        unsigned real_pos = u->fbpos;
+        memcpy(u->fb, saved, sizeof(u->fb));  /* restore */
+        u->fbpos = real_pos;  /* keep computed fbpos */
+        int flen = u->hdrLength - (real_pos>>3);
         if (flens) flens[frm] = flen;
         if (flen > 0) {
             if (s + flen > end) return -1;

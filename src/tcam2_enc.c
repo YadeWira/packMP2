@@ -1,6 +1,4 @@
 /* TCAM2 encoder — zstd compression on um2 data.
-   Domain-aware preprocessing (delta scalefactors, bit alloc dedup)
-   prototyped but disabled — needs parser fbpos alignment fix.
    Copyright (C) 2026 Tovy. GPLv3. */
 #include "tcam2.h"
 #include <zstd.h>
