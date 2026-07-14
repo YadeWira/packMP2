@@ -2,6 +2,7 @@
    Copyright (C) 2026 Tovy. GPLv3. */
 #include "unpackmp2.h"
 #include <zstd.h>
+#include "tcam2_dict.h"
 
 int tcam2_compress(FILE *in, FILE *out) {
     /* Use pack_preprocess() — proven correct, same read logic as pack() */
@@ -15,11 +16,14 @@ int tcam2_compress(FILE *in, FILE *out) {
     putc((pp_size>>24)&0xFF,out);putc((pp_size>>16)&0xFF,out);
     putc((pp_size>>8)&0xFF,out);putc(pp_size&0xFF,out);
 
-    /* zstd compress (level 1 for speed) */
+    /* zstd compress with um2 dictionary (level 1 for speed) */
     long bound = ZSTD_compressBound(pp_size);
     unsigned char *zout = malloc(bound);
     if (!zout) { free(pp); return 1; }
-    long csz = ZSTD_compress(zout, bound, pp, pp_size, 1);
+    ZSTD_CCtx *cctx = ZSTD_createCCtx();
+    long csz = ZSTD_compress_usingDict(cctx, zout, bound, pp, pp_size,
+                                        TCAM2_DICT, TCAM2_DICT_SIZE, 1);
+    ZSTD_freeCCtx(cctx);
     if (ZSTD_isError(csz)) { free(pp); free(zout); return 1; }
     fwrite(zout, 1, csz, out);
     free(zout); free(pp);

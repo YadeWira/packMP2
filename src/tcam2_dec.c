@@ -2,6 +2,7 @@
    Copyright (C) 2026 Tovy. GPLv3. */
 #include "unpackmp2.h"
 #include <zstd.h>
+#include "tcam2_dict.h"
 
 int tcam2_decompress(FILE *in, FILE *out) {
     if(getc(in)!='T'||getc(in)!='C'||getc(in)!='A'||getc(in)!='M'||getc(in)!='2')
@@ -12,7 +13,9 @@ int tcam2_decompress(FILE *in, FILE *out) {
     unsigned long long dsz=ZSTD_getFrameContentSize(cmp,csz);
     if(dsz==ZSTD_CONTENTSIZE_ERROR||dsz==ZSTD_CONTENTSIZE_UNKNOWN)dsz=osz;
     unsigned char*pp=malloc(dsz);if(!pp){free(cmp);return 1;}
-    long act=ZSTD_decompress(pp,dsz,cmp,csz);free(cmp);
+    ZSTD_DCtx *dctx = ZSTD_createDCtx();
+    long act=ZSTD_decompress_usingDict(dctx,pp,dsz,cmp,csz,TCAM2_DICT,TCAM2_DICT_SIZE);
+    ZSTD_freeDCtx(dctx); free(cmp);
     if(ZSTD_isError(act)||act!=(long)dsz){free(pp);return 1;}
     int rc = unpack_from_pp(pp, dsz, out);
     free(pp);
