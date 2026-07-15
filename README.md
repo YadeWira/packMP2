@@ -2,22 +2,22 @@
 
 Lossless MPEG Audio Layer II (MP2) transformation + compression.
 
-**packMP2** es un subproyecto de **packMP3**. Provee el codec para la
-capa MP2: reordenamiento de frames (unpackmp2) + compresión optimizada
-(TCAM2). Será integrado como submódulo/lib en packMP3.
+**packMP2** is a sub-project of **packMP3**. It provides the MP2 layer
+codec: frame reordering (unpackmp2) + optimized compression (TCAM2).
+It will be integrated as a submodule/library in packMP3.
 
-Los binarios incluidos (`unpackmp2`, `tcam2`, `lpaq8`) son para
-desarrollo/testing. En producción, packMP3 usará las bibliotecas
-directamente.
+Binaries included in the repo (`unpackmp2.exe`, `lpaq8.exe`, etc.) are
+for development/testing only. In production, packMP3 will link against
+the libraries directly.
 
-**unpackmp2**: Reordena frames MP2 al formato estructurado `um2` —
-más comprimible con compresores genéricos. Roundtrip byte-exact
-para el payload de audio (v1.2 preserva tags ID3, padding, etc.).
+**unpackmp2**: Reorders MP2 frames into the structured `um2` format —
+more compressible with general-purpose compressors. Roundtrip is
+byte-exact for the audio payload (v1.2 preserves ID3 tags, padding, etc.).
 
-**TCAM2** (Tovy Compresor de Audio MP2): Compresor optimizado para
-archivos um2. Usa zstd nivel 1 con diccionario de 110 KB entrenado
-sobre múltiples samples MP2. 131x más rápido que lpaq8 con solo
-3.7 puntos de diferencia en ratio.
+**TCAM2** (Tovy Compressor de Audio MP2): Domain-optimized compressor for
+um2 files. Uses zstd level 1 with a 110 KB dictionary trained across
+multiple MP2 samples. 131x faster than lpaq8 with only a 3.7 point
+ratio gap.
 
 Copyright (C) 2009-2010 Michael Henke (unpackmp2) — GPLv3.
 Copyright (C) 2026 Tovy (TCAM2) — GPLv3.
@@ -118,7 +118,7 @@ The original `unpackmp2` uses code/ideas from:
 
 lpaq8 compressor (C) 2007 Matt Mahoney, Alexander Ratushnyak.
 
-## TCAM2 — Tovy Compresor de Audio MP2
+## TCAM2 — Tovy Compressor de Audio MP2
 
 Domain-optimized compressor for um2 files. Uses zstd level 1 with a
 pre-trained 110KB dictionary for fast, high-ratio compression.
@@ -170,8 +170,8 @@ lpaq8_stdinout/    Modified lpaq8 (stdin/stdout, reference/testing)
 build/             Build artifacts (not tracked)
 ```
 
-**Nota sobre binarios:** Los ejecutables en el repo (`unpackmp2.exe`,
-`lpaq8.exe`, `lpaq8_stdinout/`) son los originales de Windows (2009-2010)
-incluidos para referencia y testing. No son necesarios en Linux — `make`
-produce binarios nativos. Para packMP3, solo se linkearán los `.o` de
-`pack.c`, `unpack.c`, `frame.c`, `bitio.c`, `globals.c`.
+**Note on binaries:** The executables in this repo (`unpackmp2.exe`,
+`lpaq8.exe`, `lpaq8_stdinout/`) are the original Windows builds (2009-2010),
+included for reference and testing. They are not needed on Linux — `make`
+produces native binaries. For packMP3, only the `.o` files from `pack.c`,
+`unpack.c`, `frame.c`, `bitio.c`, and `globals.c` will be linked.
