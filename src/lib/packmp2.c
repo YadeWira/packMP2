@@ -117,13 +117,22 @@ int packmp2_compress(const unsigned char *in,  size_t  in_len,
         if (!*out) { snprintf(msg,256,"packmp2: malloc failed"); return 1; }
     }
 
-    /* Step 3: never-expand guard — if compressed >= original, store verbatim */
+    /* Step 3: never-expand guard — if compressed >= original, wrap in RAW2
+       container so decompress() can recognize it (raw mp2 bytes would
+       fail "unknown format" otherwise). */
     if (opts->never_expand && *out_len >= in_len) {
         free(*out);
-        *out_len = in_len;
-        *out = malloc(in_len);
+        *out_len = 10 + in_len;  /* RAW2(4) + ver(1) + size(4) + payload */
+        *out = malloc(*out_len);
         if (!*out) { snprintf(msg,256,"packmp2: malloc failed"); return 1; }
-        memcpy(*out, in, in_len);
+        memcpy(*out,     "RAW2", 4);
+        (*out)[4] = 0x01;  /* version */
+        (*out)[5] = (in_len>>24)&0xFF;
+        (*out)[6] = (in_len>>16)&0xFF;
+        (*out)[7] = (in_len>>8)&0xFF;
+        (*out)[8] = in_len&0xFF;
+        (*out)[9] = 0x00;  /* reserved */
+        memcpy(*out + 10, in, in_len);
     }
 
     return 0;
@@ -138,9 +147,23 @@ int packmp2_decompress(const unsigned char *in,  size_t  in_len,
 
     if (in_len < 4) { snprintf(msg,256,"packmp2: input too short"); return 1; }
 
-    /* Auto-detect format: TCAM2 = "TCAM2", zpaq = 0x37 '7', RAW2 = "RAW2" */
+    /* Auto-detect format: RAW2 = stored mp2, TCAM2 = "TCAM2", zpaq = 0x37 '7' */
     unsigned char *dec_data = NULL;
     size_t dec_len = 0;
+
+    if (memcmp(in, "RAW2", 4) == 0) {
+        /* RAW2: verbatim mp2 stored by never-expand guard.
+           Format: RAW2(4) + ver(1) + orig_size(4) + reserved(1) + payload */
+        if (in_len < 10) { snprintf(msg,256,"packmp2: RAW2 header too short"); return 1; }
+        size_t raw_osz = ((size_t)in[5]<<24)|((size_t)in[6]<<16)|((size_t)in[7]<<8)|in[8];
+        if (10 + raw_osz != in_len)
+          { snprintf(msg,256,"packmp2: RAW2 size mismatch"); return 1; }
+        *out_len = raw_osz;
+        *out = malloc(raw_osz);
+        if (!*out) { snprintf(msg,256,"packmp2: malloc failed"); return 1; }
+        memcpy(*out, in + 10, raw_osz);
+        return 0;  /* done — RAW2 is already mp2, no pack step needed */
+    }
 
     if (memcmp(in, "TCAM", 4) == 0) {
         /* TCAM2 (zstd) */
@@ -198,6 +221,9 @@ size_t packmp2_query_original_size(const unsigned char *in, size_t in_len,
     }
     if (msg) msg[0]=0;
 
+    if (memcmp(in, "RAW2", 4) == 0 && in_len >= 10) {
+        return ((size_t)in[5]<<24)|((size_t)in[6]<<16)|((size_t)in[7]<<8)|in[8];
+    }
     if (memcmp(in, "TCAM", 4) == 0 && in_len >= 10) {
         int stored = in[5];
         size_t osz = ((size_t)in[6]<<24)|((size_t)in[7]<<16)|((size_t)in[8]<<8)|in[9];
