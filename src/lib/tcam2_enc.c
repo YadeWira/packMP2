@@ -4,7 +4,7 @@
 #include <zstd.h>
 #include "tcam2_dict.h"
 
-int tcam2_quiet = 0;
+int tcam2_quiet = 0;  /* NOTE: not thread-safe (cosmetic only, see tcam2.h) */
 
 int tcam2_compress_dict(FILE *in, FILE *out, int level,
                          const unsigned char *dict, size_t dict_size) {

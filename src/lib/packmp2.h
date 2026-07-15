@@ -2,7 +2,12 @@
    Link with -lpackmp2 (or vendor src/lib/ *.c + vendor/zstd/ *.c).
    For slim build (zstd only, no zpaq): compile with -DPACKMP2_SLIM.
 
-   Thread-safety: all functions are reentrant. No global mutable state.
+   Thread-safety: functions are reentrant for independent inputs but the
+   underlying unpack/pack engine uses shared global buffers (UM2_ARRAY,
+   SKIPPED_DATA). Concurrent calls to compress() or decompress() will
+   race. For multi-threaded use, serialize access or use separate processes.
+   Planned fix (v0.6): per-call heap allocation of frame/skip buffers.
+
    Error reporting: every function takes a char msg[256] buffer that receives
    a human-readable diagnostic on failure (empty string on success).
 

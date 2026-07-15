@@ -8,6 +8,8 @@
 /* Buffer for bytes skipped during frame sync (max 5 MB).
    Stores non-audio data found before/after/between MP2 frames. */
 #define MAX_SYNC_SKIP_BYTES  (5*1024*1024)
+/* NOTE: 5MB file-scope static. Not thread-safe — concurrent unpack()
+   calls share this buffer. Planned per-call heap alloc in v0.6. */
 static unsigned char SKIPPED_DATA[MAX_SYNC_SKIP_BYTES];
 
 /* Decompose one packed MP2 frame from the frame buffer into metadata arrays. */
