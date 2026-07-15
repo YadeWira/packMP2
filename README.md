@@ -35,64 +35,51 @@ scalefactors, samples) and serializes them grouped by type across frames within
 a block. This reordering exposes redundancy that generic compressors exploit,
 yielding 5–15% better ratios vs compressing the raw MP2 directly.
 
-Non-audio data (ID3 tags, RIFF headers) is discarded during unpack — only raw
-MP2 frames survive the roundtrip.
+Non-audio data (ID3 tags, RIFF headers) is preserved in v1.2 format.
+Roundtrip is byte-exact for the complete file.
 
 ## Build
 
-### Linux (native)
-
 ```sh
-make
+make          # Linux native → ./packmp2
+make mingw    # Windows 32-bit cross-compile
+make mingw64  # Windows 64-bit cross-compile
+make clean    # Remove build artifacts
 ```
 
-Requires `gcc` and `make`. Output: `./unpackmp2`.
-
-### Windows (cross-compile)
-
-```sh
-make mingw    # 32-bit (i686-w64-mingw32-gcc)
-make mingw64  # 64-bit (x86_64-w64-mingw32-gcc)
-```
-
-### Clean
-
-```sh
-make clean
-```
+Requires `gcc`, `make`, `libzstd-dev`.
 
 ## Usage
 
 ```
-unpack mp2 to um2:  unpackmp2 u < input.mp2 > output.um2
-pack um2 to mp2:    unpackmp2 p < input.um2 > output.mp2
+packmp2 u < in.mp2 > out.um2       unpack:   mp2 -> um2
+packmp2 p < in.um2 > out.mp2       pack:     um2 -> mp2
+packmp2 c < in.um2 > out.tcam2     compress: um2 -> tcam2
+packmp2 d < in.tcam2 > out.um2     decompress: tcam2 -> um2
 ```
 
-Piping example with lpaq8 (compressor included in `lpaq8_stdinout/`):
-
+Full pipeline:
 ```sh
-# compress
-unpackmp2 u < input.mp2 | lpaq8 5 - output.um2.lpaq8
-
-# decompress
-lpaq8 d input.um2.lpaq8 - | unpackmp2 p > output.mp2
+packmp2 u < input.mp2 | packmp2 c | packmp2 d | packmp2 p > output.mp2
 ```
-
-Windows batch helpers: `tools/compressMP2LPAQ8.cmd`, `tools/decompressMP2LPAQ8.cmd`.
 
 ## Project structure
 
 ```
 src/
-├── unpackmp2.h   Common types, lookup tables, function declarations
-├── globals.c      Global data tables (MPEG constants, bit allocation tables)
-├── bitio.c        Low-level bit I/O (fbgetbits / fbputbits)
-├── frame.c        Frame header parsing, CRC-16
-├── pack.c         Read um2, repack to MP2 bitstream
-├── unpack.c       Decompose MP2 frames, write um2
-└── main.c         Entry point (argv[1] selects pack/unpack mode)
-tools/             Windows .cmd helper scripts
-lpaq8_stdinout/    Modified lpaq8 compressor (stdin/stdout variant)
+├── main.c         Unified CLI (unpack/pack/compress/decompress)
+└── lib/
+    ├── unpackmp2.h   Types, tables, declarations
+    ├── globals.c      MPEG constants, allocation tables
+    ├── bitio.c        Bit-level I/O (fbgetbits/fbputbits)
+    ├── frame.c        Frame header parsing, CRC-16
+    ├── pack.c         Read um2, repack to MP2 (+ packFrame)
+    ├── unpack.c       Decompose MP2, write um2
+    ├── tcam2.h        TCAM2 API
+    ├── tcam2_enc.c    TCAM2 encoder (zstd + dictionary)
+    ├── tcam2_dec.c    TCAM2 decoder (zstd)
+    └── tcam2_dict.h   Trained zstd dictionary (110 KB, 5 samples)
+reference/         Legacy files (original sources, binaries, tools)
 ```
 
 ## Test results (from original README)
@@ -127,14 +114,10 @@ pre-trained 110KB dictionary for fast, high-ratio compression.
 
 ```
 # Compress (pipe-friendly)
-unpackmp2 u < input.mp2 | tcam2 c > output.tcam2
+packmp2 u < input.mp2 | packmp2 c > output.tcam2
 
 # Decompress
-tcam2 d < input.tcam2 | unpackmp2 p > output.mp2
-
-# Or with files
-tcam2 c input.um2 output.tcam2
-tcam2 d input.tcam2 output.um2
+packmp2 d < input.tcam2 | packmp2 p > output.mp2
 ```
 
 ### Benchmarks (example.mp2, 691 KB, 160kbps stereo)

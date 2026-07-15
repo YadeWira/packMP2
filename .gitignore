@@ -1,12 +1,8 @@
-# Build artifacts
+# Build
+build/
+packmp2
+packmp2.exe
 *.o
-*.exe
-unpackmp2
-
-# Backup files
-*~
-*.swp
-*.orig
 
 # IDE
 .vscode/
@@ -15,5 +11,3 @@ unpackmp2
 # OS
 .DS_Store
 Thumbs.db
-*.zip
-tcam2
