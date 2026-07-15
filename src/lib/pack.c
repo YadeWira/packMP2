@@ -84,7 +84,7 @@ void packFrame(unpackmp2_t* u) {
 
 /* Read um2 v2 from infile, repack to mp2, write to outfile.
    Preserves non-audio data (preamble, filler, trailer) for byte-exact roundtrip. */
-int pack(FILE* infile, FILE* outfile) {
+int pack_opt(FILE* infile, FILE* outfile, int opt) {
     /* check um2 v2 file header */
     if ((getc(infile)!='u') || (getc(infile)!='m') || (getc(infile)!='2') || (getc(infile)!=UM2_VERSION)) {
         fprintf(stderr, "NOT AN UNPACKED MP2 FILE. (missing um2 file header)\n");
@@ -171,38 +171,70 @@ int pack(FILE* infile, FILE* outfile) {
         }
 
         /* read scalefactor selection info */
-        for (i = 0; i < MAX_SBLIMIT; i++) {
-            for (frm = 0; frm < framesInBlock; frm++) {
-                unpackmp2_t* u = &UM2_ARRAY[frm];
-                if (i < u->sbLimit) {
-                    for (j = 0; j < u->numChannels; j++) {
-                        if (u->bitalloc2[j][i] != NULL) {
-                            u->scfsiBITS[j][i] = getc(infile);
+        if (opt) {
+            /* Optimized: unpack 4 scfsi values from 1 byte */
+            int pack = 0, shift = 8; /* force first read */
+            for (i = 0; i < MAX_SBLIMIT; i++) {
+                for (frm = 0; frm < framesInBlock; frm++) {
+                    unpackmp2_t* u = &UM2_ARRAY[frm];
+                    if (i < u->sbLimit) {
+                        for (j = 0; j < u->numChannels; j++) {
+                            if (u->bitalloc2[j][i] != NULL) {
+                                if (shift >= 8) { pack = getc(infile); shift = 0; }
+                                u->scfsiBITS[j][i] = (pack >> shift) & 3;
+                                shift += 2;
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            for (i = 0; i < MAX_SBLIMIT; i++) {
+                for (frm = 0; frm < framesInBlock; frm++) {
+                    unpackmp2_t* u = &UM2_ARRAY[frm];
+                    if (i < u->sbLimit) {
+                        for (j = 0; j < u->numChannels; j++) {
+                            if (u->bitalloc2[j][i] != NULL) {
+                                u->scfsiBITS[j][i] = getc(infile);
+                            }
                         }
                     }
                 }
             }
         }
 
-        /* read scalefactors (each as raw byte) */
-        for (i = 0; i < MAX_SBLIMIT; i++) {
-            for (frm = 0; frm < framesInBlock; frm++) {
-                unpackmp2_t* u = &UM2_ARRAY[frm];
-                if (i < u->sbLimit) {
-                    for (j = 0; j < u->numChannels; j++) {
-                        if (u->bitalloc2[j][i] != NULL) {
-                            u->scaleBITS[j][0][i] = getc(infile);
-                            switch (u->scfsiBITS[j][i]) {
-                            case 0:
-                                u->scaleBITS[j][1][i] = getc(infile);
-                                u->scaleBITS[j][2][i] = getc(infile);
-                                break;
-                            case 1:
-                                u->scaleBITS[j][2][i] = getc(infile);
-                                break;
-                            case 3:
-                                u->scaleBITS[j][1][i] = getc(infile);
-                                break;
+        /* read scalefactors (opt: reverse delta from previous frame) */
+        {
+            unsigned char prev_scale[2][MAX_SBLIMIT];
+            memset(prev_scale, 0, sizeof(prev_scale));
+            for (i = 0; i < MAX_SBLIMIT; i++) {
+                for (frm = 0; frm < framesInBlock; frm++) {
+                    unpackmp2_t* u = &UM2_ARRAY[frm];
+                    if (i < u->sbLimit) {
+                        for (j = 0; j < u->numChannels; j++) {
+                            if (u->bitalloc2[j][i] != NULL) {
+                                int pred = prev_scale[j][i];
+                                int raw = getc(infile);
+                                int v0 = opt ? (pred + (signed char)raw) : raw;
+                                u->scaleBITS[j][0][i] = v0;
+                                prev_scale[j][i] = v0;
+                                switch (u->scfsiBITS[j][i]) {
+                                case 0: {
+                                    int r1 = getc(infile), r2 = getc(infile);
+                                    int v1 = opt ? (pred + (signed char)r1) : r1;
+                                    int v2 = opt ? (pred + (signed char)r2) : r2;
+                                    u->scaleBITS[j][1][i] = v1;
+                                    u->scaleBITS[j][2][i] = v2;
+                                    break; }
+                                case 1: {
+                                    int r2 = getc(infile);
+                                    u->scaleBITS[j][2][i] = opt ? (pred + (signed char)r2) : r2;
+                                    break; }
+                                case 3: {
+                                    int r1 = getc(infile);
+                                    u->scaleBITS[j][1][i] = opt ? (pred + (signed char)r1) : r1;
+                                    break; }
+                                }
                             }
                         }
                     }
@@ -282,4 +314,12 @@ int pack(FILE* infile, FILE* outfile) {
     }
     /* NOTREACHED */
     return 0;
+}
+
+int pack(FILE* infile, FILE* outfile) {
+    return pack_opt(infile, outfile, 0);
+}
+
+int pack_optimized(FILE* infile, FILE* outfile) {
+    return pack_opt(infile, outfile, 1);
 }

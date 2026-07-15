@@ -80,7 +80,7 @@ void unpackFrame(unpackmp2_t* u) {
 /* Read mp2 from infile, unpack to um2 v2 format, write to outfile.
    Preserves all non-audio data (preamble, filler, trailer) for
    byte-exact roundtrip. */
-int unpack(FILE* infile, FILE* outfile) {
+int unpack_opt(FILE* infile, FILE* outfile, int opt) {
     U32 framecount = 0;
     U32 skipped = 0;
 
@@ -204,38 +204,69 @@ int unpack(FILE* infile, FILE* outfile) {
         }
 
         /* write scalefactor selection info */
-        for (i = 0; i < MAX_SBLIMIT; i++) {
-            for (frm = 0; frm < framesInBlock; frm++) {
-                unpackmp2_t* u = &UM2_ARRAY[frm];
-                if (i < u->sbLimit) {
-                    for (j = 0; j < u->numChannels; j++) {
-                        if (u->bitalloc2[j][i] != NULL) {
-                            putc(u->scfsiBITS[j][i], outfile);
+        if (opt) {
+            /* Optimized: pack 4 scfsi values per byte (each is 0-3 = 2 bits) */
+            int pack = 0, shift = 0;
+            for (i = 0; i < MAX_SBLIMIT; i++) {
+                for (frm = 0; frm < framesInBlock; frm++) {
+                    unpackmp2_t* u = &UM2_ARRAY[frm];
+                    if (i < u->sbLimit) {
+                        for (j = 0; j < u->numChannels; j++) {
+                            if (u->bitalloc2[j][i] != NULL) {
+                                pack |= (u->scfsiBITS[j][i] & 3) << shift;
+                                shift += 2;
+                                if (shift == 8) { putc(pack, outfile); pack = 0; shift = 0; }
+                            }
+                        }
+                    }
+                }
+            }
+            if (shift > 0) putc(pack, outfile); /* flush remaining */
+        } else {
+            for (i = 0; i < MAX_SBLIMIT; i++) {
+                for (frm = 0; frm < framesInBlock; frm++) {
+                    unpackmp2_t* u = &UM2_ARRAY[frm];
+                    if (i < u->sbLimit) {
+                        for (j = 0; j < u->numChannels; j++) {
+                            if (u->bitalloc2[j][i] != NULL) {
+                                putc(u->scfsiBITS[j][i], outfile);
+                            }
                         }
                     }
                 }
             }
         }
 
-        /* write scalefactors (each as raw byte, no v1.1 optimization) */
-        for (i = 0; i < MAX_SBLIMIT; i++) {
-            for (frm = 0; frm < framesInBlock; frm++) {
-                const unpackmp2_t* u = &UM2_ARRAY[frm];
-                if (i < u->sbLimit) {
-                    for (j = 0; j < u->numChannels; j++) {
-                        if (u->bitalloc2[j][i] != NULL) {
-                            putc(u->scaleBITS[j][0][i], outfile);
-                            switch (u->scfsiBITS[j][i]) {
-                            case 0:
-                                putc(u->scaleBITS[j][1][i], outfile);
-                                putc(u->scaleBITS[j][2][i], outfile);
-                                break;
-                            case 1:
-                                putc(u->scaleBITS[j][2][i], outfile);
-                                break;
-                            case 3:
-                                putc(u->scaleBITS[j][1][i], outfile);
-                                break;
+        /* write scalefactors (opt: delta-encoded from previous frame) */
+        {
+            unsigned char prev_scale[2][MAX_SBLIMIT]; /* ch, subband */
+            memset(prev_scale, 0, sizeof(prev_scale));
+            for (i = 0; i < MAX_SBLIMIT; i++) {
+                for (frm = 0; frm < framesInBlock; frm++) {
+                    const unpackmp2_t* u = &UM2_ARRAY[frm];
+                    if (i < u->sbLimit) {
+                        for (j = 0; j < u->numChannels; j++) {
+                            if (u->bitalloc2[j][i] != NULL) {
+                                int pred = prev_scale[j][i];
+                                int v0 = u->scaleBITS[j][0][i];
+                                putc(opt ? (unsigned char)((v0 - pred) & 0xFF) : v0, outfile);
+                                prev_scale[j][i] = v0;
+                                switch (u->scfsiBITS[j][i]) {
+                                case 0: {
+                                    int v1 = u->scaleBITS[j][1][i];
+                                    int v2 = u->scaleBITS[j][2][i];
+                                    putc(opt ? (unsigned char)((v1 - pred) & 0xFF) : v1, outfile);
+                                    putc(opt ? (unsigned char)((v2 - pred) & 0xFF) : v2, outfile);
+                                    break; }
+                                case 1: {
+                                    int v2 = u->scaleBITS[j][2][i];
+                                    putc(opt ? (unsigned char)((v2 - pred) & 0xFF) : v2, outfile);
+                                    break; }
+                                case 3: {
+                                    int v1 = u->scaleBITS[j][1][i];
+                                    putc(opt ? (unsigned char)((v1 - pred) & 0xFF) : v1, outfile);
+                                    break; }
+                                }
                             }
                         }
                     }
@@ -310,4 +341,12 @@ int unpack(FILE* infile, FILE* outfile) {
     }
     /* NOTREACHED */
     return 0;
+}
+
+int unpack(FILE* infile, FILE* outfile) {
+    return unpack_opt(infile, outfile, 0);
+}
+
+int unpack_optimized(FILE* infile, FILE* outfile) {
+    return unpack_opt(infile, outfile, 1);
 }

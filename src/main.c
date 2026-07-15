@@ -21,7 +21,9 @@
 
 /* Forward declarations */
 extern int unpack(FILE *in, FILE *out);
+extern int unpack_optimized(FILE *in, FILE *out);
 extern int pack(FILE *in, FILE *out);
+extern int pack_optimized(FILE *in, FILE *out);
 extern int tcam2_compress(FILE *in, FILE *out, int level);
 extern int tcam2_compress_dict(FILE *in, FILE *out, int level,
                                 const unsigned char *dict, size_t dict_size);
@@ -49,6 +51,7 @@ static void print_help(void) {
         "  -o, --output F  Write to file (default: stdout)\n"
         "  -q, --quiet     Suppress progress messages\n"
         "  -l, --level N   zstd level 1-9 (default: 1)\n"
+        "  -O, --optimized SCFSI packing + scalefactor delta (better ratio)\n"
         "  --raw           c/d passthrough, no compression (testing)\n"
         "  -b, --benchmark Report timing + ratio\n"
         "  -s, --stats     Show detailed statistics\n"
@@ -200,7 +203,7 @@ int main(int argc, char **argv) {
 
     /* Parse options */
     char *in_file=NULL, *out_file=NULL, *dict_file=NULL;
-    int quiet=0, benchmark=0, verify=0, raw=0, level=1, stats=0, no_dict=0, compare=0, csv=0;
+    int quiet=0, benchmark=0, verify=0, raw=0, level=1, stats=0, no_dict=0, compare=0, csv=0, optimized=0;
     unsigned char *ext_dict=NULL; size_t ext_dict_size=0;
 
     for (int i=arg_start+1; i<argc; i++) {
@@ -209,6 +212,7 @@ int main(int argc, char **argv) {
         else if (strcmp(argv[i],"-s")==0||strcmp(argv[i],"--stats")==0) stats=1;
         else if (strcmp(argv[i],"--verify")==0) verify=1;
         else if (strcmp(argv[i],"--raw")==0) raw=1;
+        else if (strcmp(argv[i],"-O")==0||strcmp(argv[i],"--optimized")==0) optimized=1;
         else if (strcmp(argv[i],"--no-dict")==0) no_dict=1;
         else if (strcmp(argv[i],"--compare")==0) compare=1;
         else if (strcmp(argv[i],"--csv")==0) csv=1;
@@ -274,8 +278,10 @@ int main(int argc, char **argv) {
     } else {
         /* Normal command execution */
         switch (cmd) {
-        case 'u': if(!quiet)fprintf(stderr,"packMP2: unpacking...\n"); rc=unpack(in,out); break;
-        case 'p': if(!quiet)fprintf(stderr,"packMP2: packing...\n"); rc=pack(in,out); break;
+        case 'u': if(!quiet)fprintf(stderr,"packMP2: unpacking%s...\n",optimized?" (optimized)":"");
+                  rc=optimized?unpack_optimized(in,out):unpack(in,out); break;
+        case 'p': if(!quiet)fprintf(stderr,"packMP2: packing%s...\n",optimized?" (optimized)":"");
+                  rc=optimized?pack_optimized(in,out):pack(in,out); break;
         case 'c':
             if(raw){if(!quiet)fprintf(stderr,"packMP2: raw copy...\n");while((cc=getc(in))!=EOF)putc(cc,out);}
             else{
@@ -298,10 +304,10 @@ int main(int argc, char **argv) {
             while((cc=getc(in))!=EOF){if(isz>=icap){icap*=2;idata=realloc(idata,icap);}idata[isz++]=cc;}
             FILE *mp2_f=tmpfile();fwrite(idata,1,isz,mp2_f);rewind(mp2_f);
             FILE *um2_f=tmpfile(),*tc_f=tmpfile(),*um2_r=tmpfile();
-            if(!(rc=unpack(mp2_f,um2_f))){rewind(um2_f);
+            if(!(rc=optimized?unpack_optimized(mp2_f,um2_f):unpack(mp2_f,um2_f))){rewind(um2_f);
             if(!(rc=tcam2_compress(um2_f,tc_f,level))){rewind(tc_f);
             if(!(rc=tcam2_decompress(tc_f,um2_r))){rewind(um2_r);
-            rc=pack(um2_r,out);}}}
+            rc=optimized?pack_optimized(um2_r,out):pack(um2_r,out);}}}
             /* Verify */
             if(verify&&rc==0&&out_file){fclose(out);out=NULL;
                 FILE *vrf=fopen(out_file,"rb");if(vrf){fseek(vrf,0,SEEK_END);
