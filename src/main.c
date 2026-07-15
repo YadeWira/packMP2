@@ -216,14 +216,18 @@ int main(int argc, char **argv) {
             { fprintf(stderr,"packMP2 v" VERSION "\n"); return 0; }
         else if (strcmp(argv[i],"-h")==0||strcmp(argv[i],"--help")==0)
             { print_help(); return 0; }
-        else if ((strcmp(argv[i],"-i")==0||strcmp(argv[i],"--input")==0)&&i+1<argc)
-            in_file=argv[++i];
-        else if ((strcmp(argv[i],"-o")==0||strcmp(argv[i],"--output")==0)&&i+1<argc)
-            out_file=argv[++i];
-        else if ((strcmp(argv[i],"-l")==0||strcmp(argv[i],"--level")==0)&&i+1<argc)
-            level=atoi(argv[++i]);
-        else if ((strcmp(argv[i],"--dict")==0)&&i+1<argc)
-            dict_file=argv[++i];
+        else if (strcmp(argv[i],"-i")==0||strcmp(argv[i],"--input")==0){
+            if(i+1>=argc){fprintf(stderr,"packMP2: missing argument for %s\n",argv[i]);return 1;}
+            in_file=argv[++i];}
+        else if (strcmp(argv[i],"-o")==0||strcmp(argv[i],"--output")==0){
+            if(i+1>=argc){fprintf(stderr,"packMP2: missing argument for %s\n",argv[i]);return 1;}
+            out_file=argv[++i];}
+        else if (strcmp(argv[i],"-l")==0||strcmp(argv[i],"--level")==0){
+            if(i+1>=argc){fprintf(stderr,"packMP2: missing argument for %s\n",argv[i]);return 1;}
+            level=atoi(argv[++i]);}
+        else if (strcmp(argv[i],"--dict")==0){
+            if(i+1>=argc){fprintf(stderr,"packMP2: missing argument for %s\n",argv[i]);return 1;}
+            dict_file=argv[++i];}
         else { fprintf(stderr,"packMP2: unknown option: %s\n",argv[i]); return 1; }
     }
 
