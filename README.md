@@ -1,4 +1,4 @@
-# unpackmp2 + TCAM2
+# packMP2 Lab
 
 Lossless MPEG Audio Layer II (MP2) transformation + compression.
 
