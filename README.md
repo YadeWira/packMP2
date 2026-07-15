@@ -6,9 +6,10 @@ Lossless MPEG Audio Layer II (MP2) transformation + compression.
 codec: frame reordering (unpackmp2) + optimized compression (TCAM2).
 It will be integrated as a submodule/library in packMP3.
 
-Binaries included in the repo (`unpackmp2.exe`, `lpaq8.exe`, etc.) are
-for development/testing only. In production, packMP3 will link against
-the libraries directly.
+Prebuilt binaries are in [GitHub Releases](https://github.com/YadeWira/packMP2/releases)
+for Linux x64, Windows x64, and Windows x86. All include full TCAM2 support.
+Binaries in `reference/` are the original Windows builds (2009-2010) kept
+for historical reference.
 
 **unpackmp2**: Reorders MP2 frames into the structured `um2` format —
 more compressible with general-purpose compressors. Roundtrip is
@@ -41,34 +42,59 @@ Roundtrip is byte-exact for the complete file.
 ## Build
 
 ```sh
-make          # Full build (requires libzstd-dev) → ./packmp2
-make lite     # Unpack/pack only (zero deps, just gcc+make)
-make mingw    # Windows 32-bit cross-compile (unpack/pack only)
-make mingw64  # Windows 64-bit cross-compile (unpack/pack only)
+make          # Full build (zero deps, vendored zstd) → ./packmp2
+make lite     # Unpack/pack only (just gcc+make)
+make mingw    # Windows 32-bit cross-compile (full TCAM2)
+make mingw64  # Windows 64-bit cross-compile (full TCAM2)
 make clean    # Remove build artifacts
 ```
 
-`make` needs `libzstd-dev`. `make lite` solo necesita `gcc` + `make`.
+100% self-contained. `gcc` + `make` is all you need. zstd 1.5.7 is vendored
+in `vendor/zstd/`.
 
 ## Usage
 
 ```
-packmp2 u < in.mp2 > out.um2       unpack:   mp2 -> um2
-packmp2 p < in.um2 > out.mp2       pack:     um2 -> mp2
-packmp2 c < in.um2 > out.tcam2     compress: um2 -> tcam2
-packmp2 d < in.tcam2 > out.um2     decompress: tcam2 -> um2
+packmp2 <command> [options]
+
+Commands:
+  u, unpack      mp2 -> um2
+  p, pack        um2 -> mp2
+  c, compress    um2 -> tcam2
+  d, decompress  tcam2 -> um2
+  x, pipe        mp2 -> um2 -> tcam2 -> um2 -> mp2
+
+Options:
+  -i, --input F   Read from file (default: stdin)
+  -o, --output F  Write to file (default: stdout)
+  -q, --quiet     Suppress progress messages
+  -l, --level N   zstd level 1-9 (default: 1)
+  -b, --benchmark Report timing + ratio
+  -s, --stats     Show detailed statistics
+  --compare       Compress with/without dict, compare
+  --no-dict       Compress without dictionary
+  --dict FILE     Use external dictionary
+  --list FILE     Show file metadata (no processing)
+  --test-all DIR  Batch test all .mp2 files in directory
+  --csv           CSV output for scripting
+  --raw           c/d passthrough (testing)
+  --verify        Auto roundtrip verification (pipe mode)
+  -V, --version   Print version
+  -h, --help      This help
 ```
 
 Full pipeline:
 ```sh
 packmp2 u < input.mp2 | packmp2 c | packmp2 d | packmp2 p > output.mp2
+# Or with switches:
+packmp2 x -i input.mp2 -o output.mp2 --verify -b
 ```
 
 ## Project structure
 
 ```
 src/
-├── main.c         Unified CLI (unpack/pack/compress/decompress)
+├── main.c         Unified CLI
 └── lib/
     ├── unpackmp2.h   Types, tables, declarations
     ├── globals.c      MPEG constants, allocation tables
@@ -77,9 +103,10 @@ src/
     ├── pack.c         Read um2, repack to MP2 (+ packFrame)
     ├── unpack.c       Decompose MP2, write um2
     ├── tcam2.h        TCAM2 API
-    ├── tcam2_enc.c    TCAM2 encoder (zstd + dictionary)
-    ├── tcam2_dec.c    TCAM2 decoder (zstd)
+    ├── tcam2_enc.c    TCAM2 encoder
+    ├── tcam2_dec.c    TCAM2 decoder
     └── tcam2_dict.h   Trained zstd dictionary (110 KB, 5 samples)
+vendor/zstd/       Vendored zstd 1.5.7 (zero external deps)
 reference/         Legacy files (original sources, binaries, tools)
 ```
 
