@@ -19,9 +19,25 @@ extern "C" {
 int zpaq_compress(const unsigned char *in, size_t in_size,
                   unsigned char **out, size_t *out_size, int level) {
     if (level < 1) level = 1; if (level > 5) level = 5;
-    char method[8];
-    snprintf(method, sizeof(method), "%d", level);
+    /* Custom-tuned methods for um2 data — faster than built-in expansion.
+       Levels 1-2: built-in LZ77 (fast, good for barely-compressible data).
+       Level 3: BWT+mix (574k, 0.41s) — beats old built-in 3 in ratio+speed.
+       Level 4: BWT+1ISSE+mix (570k, 0.46s) — near old level 4 ratio at 2x speed.
+       Level 5: built-in full CM (562k, 2.9s) — best ratio, matches lpaq8. */
+    static const char *methods[] = {
+        "0",              /* 0: store (unused) */
+        "1",              /* 1: fast LZ77 */
+        "2",              /* 2: LZ77 longer search */
+        "x6,0ci1m",       /* 3: BWT+mix — fast + good ratio */
+        "x6,0ci1,1m",     /* 4: BWT+1ISSE+mix — sweet spot */
+        "5",              /* 5: built-in full CM — best ratio */
+    };
+    return zpaq_compress_method(in, in_size, out, out_size, methods[level]);
+}
 
+int zpaq_compress_method(const unsigned char *in, size_t in_size,
+                         unsigned char **out, size_t *out_size,
+                         const char *method) {
     libzpaq::StringBuffer sb_in, sb_out;
     sb_in.write((const char*)in, in_size);
 

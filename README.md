@@ -131,27 +131,21 @@ reference/         Legacy files (original sources, binaries, tools)
 | Method | Compressed | Ratio | Encode | Decode |
 |--------|-----------|-------|--------|--------|
 | lpaq8 5 via um2 | 561,496 | 81.2% | 1.36s | 1.84s |
-| **packmp2 c --zpaq 5** | **561,892** | **81.3%** | **3.10s** | **3.38s** |
-| **packmp2 c --zpaq 4** | **569,303** | **82.4%** | **0.98s** | **1.01s** |
-| **packmp2 c --zpaq 3** | **583,029** | **84.3%** | **0.49s** | **0.34s** |
+| **packmp2 c --zpaq 5** | **561,892** | **81.3%** | **2.86s** | **2.96s** |
+| **packmp2 c --zpaq 4** | **570,073** | **82.5%** | **0.41s** | **0.52s** |
+| **packmp2 c --zpaq 3** | **574,046** | **83.0%** | **0.35s** | **0.40s** |
 | **packmp2 c (dict+zstd)** | **623,056** | **90.1%** | **0.013s** | **0.007s** |
 
 Key takeaways:
-- **zpaq m5** matches lpaq8 ratio (81.3% vs 81.2%) — context mixing with full CM models
-- **zpaq m4** is 2× faster than lpaq8 at only 1.2 points worse ratio
-- **zpaq m3** is 4× faster decode than lpaq8 at 84.3% ratio
+- **zpaq m5** matches lpaq8 ratio (81.3% vs 81.2%) — full CM with context mixing
+- **zpaq m4** is **3.3× faster** than lpaq8 with only 1.2 points ratio gap (BWT+ISSE+mix)
+- **zpaq m3** is **3.9× faster** than lpaq8 at 83.0% ratio (BWT+mix)
 - **TCAM2 zstd+dict** is **100× faster** than lpaq8 for real-time use
 
+zpaq levels use hand-tuned ZPAQL methods optimized for um2 audio data
+(levels 3-4 bypass built-in expansion for ~2× speedup at same ratio).
+
 All 9 test samples pass byte-exact roundtrip.
-
-Built-in zpaq via `--zpaq N` flag (no external binary needed):
-```sh
-# Maximum compression:
-packmp2 x --zpaq 5 -i input.mp2 -o output.mp2 --verify
-
-# Balanced (speed + ratio):
-packmp2 x --zpaq 4 -i input.mp2 -o output.mp2 --verify
-```
 
 ## License
 

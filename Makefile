@@ -4,8 +4,8 @@
 
 CC      ?= gcc
 CXX     ?= g++
-CFLAGS  ?= -Wall -O2 -fomit-frame-pointer -s -I$(LIBDIR) -Ivendor/zstd -Ivendor/zstd/common -Ivendor/zstd/compress -Ivendor/zstd/decompress -Ivendor/zpaq -DXXH_NAMESPACE=ZSTD_ -DZSTD_LEGACY_SUPPORT=0 -DDYNAMIC_BMI2=0 -DZSTD_ENABLE_ASM_X86_64_BMI2=0
-CXXFLAGS ?= -Wall -O2 -Ivendor/zpaq
+CFLAGS  ?= -Wall -O3 -march=native -fomit-frame-pointer -s -I$(LIBDIR) -Ivendor/zstd -Ivendor/zstd/common -Ivendor/zstd/compress -Ivendor/zstd/decompress -Ivendor/zpaq -DXXH_NAMESPACE=ZSTD_ -DZSTD_LEGACY_SUPPORT=0 -DDYNAMIC_BMI2=0 -DZSTD_DISABLE_ASM
+CXXFLAGS ?= -Wall -O3 -march=native -Ivendor/zpaq
 LDFLAGS ?=
 
 SRCDIR  = src

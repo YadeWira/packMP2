@@ -19,7 +19,7 @@
 
 #include "zpaq_c.h"
 
-#define VERSION "0.4"
+#define VERSION "0.5"
 
 /* Forward declarations */
 extern int unpack(FILE *in, FILE *out);
@@ -207,6 +207,7 @@ int main(int argc, char **argv) {
     /* Parse options */
     char *in_file=NULL, *out_file=NULL, *dict_file=NULL;
     int quiet=0, benchmark=0, verify=0, raw=0, level=1, stats=0, no_dict=0, compare=0, csv=0, optimized=0, zpaq_level=0;
+    char *zpaq_method=NULL;
     unsigned char *ext_dict=NULL; size_t ext_dict_size=0;
 
     for (int i=arg_start+1; i<argc; i++) {
@@ -219,6 +220,9 @@ int main(int argc, char **argv) {
         else if (strcmp(argv[i],"--zpaq")==0){
             if(i+1>=argc){fprintf(stderr,"packMP2: missing level for --zpaq\n");return 1;}
             zpaq_level=atoi(argv[++i]); if(zpaq_level<1)zpaq_level=1; if(zpaq_level>5)zpaq_level=5;}
+        else if (strcmp(argv[i],"--zpaq-method")==0){
+            if(i+1>=argc){fprintf(stderr,"packMP2: missing method for --zpaq-method\n");return 1;}
+            zpaq_method=argv[++i]; zpaq_level=-1; /* -1 = raw method mode */}
         else if (strcmp(argv[i],"--no-dict")==0) no_dict=1;
         else if (strcmp(argv[i],"--compare")==0) compare=1;
         else if (strcmp(argv[i],"--csv")==0) csv=1;
@@ -290,12 +294,16 @@ int main(int argc, char **argv) {
                   rc=optimized?pack_optimized(in,out):pack(in,out); break;
         case 'c':
             if(raw){if(!quiet)fprintf(stderr,"packMP2: raw copy...\n");while((cc=getc(in))!=EOF)putc(cc,out);}
-            else if(zpaq_level>0){
-                if(!quiet)fprintf(stderr,"packMP2: compressing (zpaq level %d)...\n",zpaq_level);
+            else if(zpaq_level>0 || zpaq_method){
+                if(!quiet){
+                  if(zpaq_method) fprintf(stderr,"packMP2: compressing (zpaq method %s)...\n",zpaq_method);
+                  else fprintf(stderr,"packMP2: compressing (zpaq level %d)...\n",zpaq_level);
+                }
                 long isz=0,icap=65536;unsigned char*idata=malloc(icap);
                 while((cc=getc(in))!=EOF){if(isz>=icap){icap*=2;idata=realloc(idata,icap);}idata[isz++]=cc;}
                 unsigned char*zout=NULL;size_t zsz=0;
-                rc=zpaq_compress(idata,isz,&zout,&zsz,zpaq_level);
+                if(zpaq_method) rc=zpaq_compress_method(idata,isz,&zout,&zsz,zpaq_method);
+                else rc=zpaq_compress(idata,isz,&zout,&zsz,zpaq_level);
                 if(rc==0){fwrite(zout,1,zsz,out);free(zout);}
                 else fprintf(stderr,"packMP2: zpaq compression failed\n");
                 free(idata);
@@ -312,7 +320,7 @@ int main(int argc, char **argv) {
                 /* Auto-detect: peek first byte for zpaq vs tcam2 */
                 int first=getc(in);
                 if(first==EOF){fprintf(stderr,"packMP2: empty input\n");rc=1;}
-                else if(first==0x37||zpaq_level>0){  /* '7' = zpaq magic */
+                else if(first==0x37||zpaq_level>0||zpaq_method){  /* '7' = zpaq magic */
                     if(!quiet)fprintf(stderr,"packMP2: decompressing (zpaq)...\n");
                     long isz=0,icap=65536;unsigned char*idata=malloc(icap);
                     idata[isz++]=(unsigned char)first;
@@ -337,13 +345,15 @@ int main(int argc, char **argv) {
             FILE *mp2_f=tmpfile();fwrite(idata,1,isz,mp2_f);rewind(mp2_f);
             FILE *um2_f=tmpfile(),*tc_f=tmpfile(),*um2_r=tmpfile();
             if(!(rc=optimized?unpack_optimized(mp2_f,um2_f):unpack(mp2_f,um2_f))){rewind(um2_f);
-            if(zpaq_level>0){
+            if(zpaq_level>0 || zpaq_method){
                 /* zpaq path: read um2, compress with zpaq, decompress */
                 long um2sz=0;unsigned char*um2data=NULL;
                 {long cap=65536;um2data=malloc(cap);
                  while((cc=getc(um2_f))!=EOF){if(um2sz>=cap){cap*=2;um2data=realloc(um2data,cap);}um2data[um2sz++]=cc;}}
                 unsigned char*zout=NULL;size_t zsz=0;
-                if(!(rc=zpaq_compress(um2data,um2sz,&zout,&zsz,zpaq_level))){
+                if(zpaq_method) rc=zpaq_compress_method(um2data,um2sz,&zout,&zsz,zpaq_method);
+                else rc=zpaq_compress(um2data,um2sz,&zout,&zsz,zpaq_level);
+                if(!rc){
                     unsigned char*dec=NULL;size_t dsz=0;
                     if(!(rc=zpaq_decompress(zout,zsz,&dec,&dsz))){
                         fwrite(dec,1,dsz,um2_r);rewind(um2_r);

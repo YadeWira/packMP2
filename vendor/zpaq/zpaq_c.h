@@ -13,6 +13,12 @@ extern "C" {
 int zpaq_compress(const unsigned char *in, size_t in_size,
                   unsigned char **out, size_t *out_size, int level);
 
+/* Compress with raw ZPAQL method string (e.g. "x6,0ci1,1,1,1,2am").
+   For experimenting with custom methods. Returns 0 on success. */
+int zpaq_compress_method(const unsigned char *in, size_t in_size,
+                         unsigned char **out, size_t *out_size,
+                         const char *method);
+
 /* Decompress data[in_size] into *out (malloc'd, caller frees).
    Returns 0 on success. */
 int zpaq_decompress(const unsigned char *in, size_t in_size,
