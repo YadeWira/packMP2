@@ -344,9 +344,9 @@ int main(int argc, char **argv) {
             while((cc=getc(in))!=EOF){if(isz>=icap){icap*=2;idata=realloc(idata,icap);}idata[isz++]=cc;}
             FILE *mp2_f=tmpfile();fwrite(idata,1,isz,mp2_f);rewind(mp2_f);
             FILE *um2_f=tmpfile(),*tc_f=tmpfile(),*um2_r=tmpfile();
+            int stored=0; /* pipeline-level never-expand: skip compress if no gain vs original mp2 */
             if(!(rc=optimized?unpack_optimized(mp2_f,um2_f):unpack(mp2_f,um2_f))){rewind(um2_f);
             if(zpaq_level>0 || zpaq_method){
-                /* zpaq path: read um2, compress with zpaq, decompress */
                 long um2sz=0;unsigned char*um2data=NULL;
                 {long cap=65536;um2data=malloc(cap);
                  while((cc=getc(um2_f))!=EOF){if(um2sz>=cap){cap*=2;um2data=realloc(um2data,cap);}um2data[um2sz++]=cc;}}
@@ -354,18 +354,23 @@ int main(int argc, char **argv) {
                 if(zpaq_method) rc=zpaq_compress_method(um2data,um2sz,&zout,&zsz,zpaq_method);
                 else rc=zpaq_compress(um2data,um2sz,&zout,&zsz,zpaq_level);
                 if(!rc){
-                    unsigned char*dec=NULL;size_t dsz=0;
-                    if(!(rc=zpaq_decompress(zout,zsz,&dec,&dsz))){
-                        fwrite(dec,1,dsz,um2_r);rewind(um2_r);
-                        rc=optimized?pack_optimized(um2_r,out):pack(um2_r,out);
-                        free(dec);
+                    if((long)zsz >= isz){stored=1;fwrite(idata,1,isz,out);free(zout);}
+                    else{
+                        unsigned char*dec=NULL;size_t dsz=0;
+                        if(!(rc=zpaq_decompress(zout,zsz,&dec,&dsz))){
+                            fwrite(dec,1,dsz,um2_r);rewind(um2_r);
+                            rc=optimized?pack_optimized(um2_r,out):pack(um2_r,out);
+                            free(dec);
+                        }
+                        free(zout);
                     }
-                    free(zout);
                 }
                 free(um2data);
             } else {
-            if(!(rc=tcam2_compress(um2_f,tc_f,level))){rewind(tc_f);
-            if(!(rc=tcam2_decompress(tc_f,um2_r))){rewind(um2_r);
+            if(!(rc=tcam2_compress(um2_f,tc_f,level))){
+            fseek(tc_f,0,SEEK_END); long tc_sz=ftell(tc_f); rewind(tc_f);
+            if(tc_sz >= isz){stored=1;fwrite(idata,1,isz,out);}
+            else if(!(rc=tcam2_decompress(tc_f,um2_r))){rewind(um2_r);
             rc=optimized?pack_optimized(um2_r,out):pack(um2_r,out);}}}
             }
             /* Verify */
@@ -375,13 +380,13 @@ int main(int argc, char **argv) {
                 if(osz==isz&&memcmp(idata,od,isz)==0)fprintf(stderr,"verify: BYTE-EXACT OK\n");
                 else{fprintf(stderr,"verify: MISMATCH\n");rc=1;}free(od);}}
             /* Stats */
-            if(stats&&rc==0){rewind(um2_f);fseek(um2_f,0,SEEK_END);
-                long um2sz=ftell(um2_f);rewind(tc_f);fseek(tc_f,0,SEEK_END);
-                long tcsz=ftell(tc_f);
-                if(csv) printf("%ld,%ld,%ld,%ld,%.1f,%.1f,%.1f\n",
-                    isz,um2sz,tcsz,(long)ftell(out),100.0*um2sz/isz,100.0*tcsz/um2sz,100.0*ftell(out)/isz);
-                else fprintf(stderr,"  mp2:%ld um2:%ld(%.1f%%) tcam2:%ld(%.1f%%) mp2_out:%ld(%.1f%%)\n",
-                    isz,um2sz,100.0*um2sz/isz,tcsz,100.0*tcsz/um2sz,(long)ftell(out),100.0*ftell(out)/isz);}
+            if(stats&&rc==0){
+                long tcsz=stored?isz:(zpaq_level>0||zpaq_method?0:ftell(tc_f));
+                long outsz=ftell(out);
+                if(csv) printf("%ld,%ld,%ld,%ld,%.1f,%.1f%s\n",
+                    isz,(long)0,tcsz,outsz,100.0*tcsz/isz,100.0*outsz/isz,stored?",stored":"");
+                else fprintf(stderr,"  mp2:%ld tcam2:%ld(%.1f%%) mp2_out:%ld(%.1f%%)%s\n",
+                    isz,tcsz,100.0*tcsz/isz,outsz,100.0*outsz/isz,stored?" [stored]":"");}
             fclose(mp2_f);fclose(um2_f);fclose(tc_f);fclose(um2_r);free(idata);
         } break;
         default: print_help(); rc=1;

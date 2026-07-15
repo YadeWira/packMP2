@@ -8,9 +8,18 @@ int tcam2_decompress_dict(FILE *in, FILE *out,
                            const unsigned char *dict, size_t dict_size) {
     if(getc(in)!='T'||getc(in)!='C'||getc(in)!='A'||getc(in)!='M'||getc(in)!='2')
     {fprintf(stderr,"TCAM2: bad header\n");return 1;}
+    int stored=getc(in);
     long osz=((long)getc(in)<<24)|((long)getc(in)<<16)|((long)getc(in)<<8)|getc(in);
     long csz=0,ccap=65536;unsigned char*cmp=malloc(ccap);if(!cmp)return 1;int c;
     while((c=getc(in))!=EOF){if(csz>=ccap){ccap*=2;cmp=realloc(cmp,ccap);}cmp[csz++]=c;}
+
+    if (stored) {
+        /* verbatim passthrough (never-expand guard chose stored on encode) */
+        if (csz != osz) { free(cmp); fprintf(stderr,"TCAM2: corrupt stored block\n"); return 1; }
+        fwrite(cmp,1,csz,out); free(cmp);
+        return 0;
+    }
+
     unsigned long long dsz=ZSTD_getFrameContentSize(cmp,csz);
     if(dsz==ZSTD_CONTENTSIZE_ERROR||dsz==ZSTD_CONTENTSIZE_UNKNOWN)dsz=osz;
     unsigned char*data=malloc(dsz);if(!data){free(cmp);return 1;}

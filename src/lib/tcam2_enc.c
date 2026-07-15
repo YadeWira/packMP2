@@ -10,9 +10,7 @@ int tcam2_compress_dict(FILE *in, FILE *out, int level,
                          const unsigned char *dict, size_t dict_size) {
     long sz=0,cap=65536;unsigned char*data=malloc(cap);if(!data)return 1;int c;
     while((c=getc(in))!=EOF){if(sz>=cap){cap*=2;data=realloc(data,cap);}data[sz++]=c;}
-    putc('T',out);putc('C',out);putc('A',out);putc('M',out);putc('2',out);
-    putc((sz>>24)&0xFF,out);putc((sz>>16)&0xFF,out);
-    putc((sz>>8)&0xFF,out);putc(sz&0xFF,out);
+
     long bound=ZSTD_compressBound(sz);
     unsigned char*zout=malloc(bound);if(!zout){free(data);return 1;}
     ZSTD_CCtx*cctx=ZSTD_createCCtx();
@@ -24,8 +22,21 @@ int tcam2_compress_dict(FILE *in, FILE *out, int level,
         csz=ZSTD_compress2(cctx,zout,bound,data,sz);
     ZSTD_freeCCtx(cctx);
     if(ZSTD_isError(csz)){free(data);free(zout);return 1;}
-    fwrite(zout,1,csz,out);free(zout);free(data);
-    if(!tcam2_quiet) fprintf(stderr,"TCAM2: %ld -> %ld bytes (%.1f%%)\n",sz,ftell(out),100.0*ftell(out)/(sz?sz:1));
+
+    /* never-expand guard: on small inputs the zstd frame + dict-ID overhead
+       can exceed the input size (e.g. um2 files under ~100KB). Store
+       verbatim instead so tcam2 output is never larger than the input. */
+    int stored = (csz >= sz);
+
+    putc('T',out);putc('C',out);putc('A',out);putc('M',out);putc('2',out);
+    putc(stored,out);
+    putc((sz>>24)&0xFF,out);putc((sz>>16)&0xFF,out);
+    putc((sz>>8)&0xFF,out);putc(sz&0xFF,out);
+    if (stored) fwrite(data,1,sz,out);
+    else        fwrite(zout,1,csz,out);
+    free(zout);free(data);
+    if(!tcam2_quiet) fprintf(stderr,"TCAM2: %ld -> %ld bytes (%.1f%%)%s\n",sz,ftell(out),
+        100.0*ftell(out)/(sz?sz:1), stored?" [stored]":"");
     return 0;
 }
 
