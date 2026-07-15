@@ -21,7 +21,7 @@ ZSTD_OBJ = $(patsubst $(ZSTD_DIR)/%.c,$(OBJDIR)/zstd_%.o,$(ZSTD_SRC))
 
 # Library sources
 LIB_SRC  = $(LIBDIR)/globals.c $(LIBDIR)/bitio.c $(LIBDIR)/frame.c \
-           $(LIBDIR)/pack.c $(LIBDIR)/unpack.c
+           $(LIBDIR)/pack.c $(LIBDIR)/unpack.c $(LIBDIR)/packmp2.c
 LIB_OBJ  = $(patsubst $(LIBDIR)/%.c,$(OBJDIR)/%.o,$(LIB_SRC))
 
 # TCAM2 sources
@@ -53,7 +53,7 @@ lite: $(LITE_OBJ)
 	$(CC) $(LITE_OBJ) $(LDFLAGS) -o packmp2
 	@echo "  Built packmp2 (lite: unpack/pack only, no TCAM2)"
 
-$(OBJDIR)/%.o: $(LIBDIR)/%.c $(LIBDIR)/unpackmp2.h | $(OBJDIR)
+$(OBJDIR)/%.o: $(LIBDIR)/%.c $(LIBDIR)/unpackmp2.h $(LIBDIR)/packmp2.h $(LIBDIR)/tcam2.h | $(OBJDIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(OBJDIR)/main.o: $(SRCDIR)/main.c $(LIBDIR)/unpackmp2.h $(LIBDIR)/tcam2.h vendor/zpaq/zpaq_c.h | $(OBJDIR)
