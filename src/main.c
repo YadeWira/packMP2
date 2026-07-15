@@ -1,5 +1,5 @@
 /*  packMP2 — MPEG Audio Layer II lossless transform + compression
-    Unified CLI with switches for testing. v0.2
+    Unified CLI with switches for testing. v0.3
     Copyright (C) 2009-2010 Michael Henke, 2026 Tovy. GPLv3.
 */
 
@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <dirent.h>
 
 #ifdef _WIN32
 # include <fcntl.h>
@@ -16,27 +17,18 @@
 # define SET_BINARY_MODE(f) ((void)0)
 #endif
 
-#define VERSION "0.2"
+#define VERSION "0.3"
 
 /* Forward declarations */
 extern int unpack(FILE *in, FILE *out);
 extern int pack(FILE *in, FILE *out);
 extern int tcam2_compress(FILE *in, FILE *out, int level);
+extern int tcam2_compress_dict(FILE *in, FILE *out, int level,
+                                const unsigned char *dict, size_t dict_size);
 extern int tcam2_decompress(FILE *in, FILE *out);
+extern int tcam2_decompress_dict(FILE *in, FILE *out,
+                                  const unsigned char *dict, size_t dict_size);
 extern int tcam2_quiet;
-
-/* Weak stubs for lite build (no zstd) */
-__attribute__((weak)) int tcam2_compress(FILE *in, FILE *out, int level) {
-    (void)in;(void)out;(void)level;
-    fprintf(stderr,"TCAM2 not available (lite build). Use --raw for passthrough.\n");
-    return 1;
-}
-__attribute__((weak)) int tcam2_decompress(FILE *in, FILE *out) {
-    (void)in;(void)out;
-    fprintf(stderr,"TCAM2 not available (lite build). Use --raw for passthrough.\n");
-    return 1;
-}
-__attribute__((weak)) int tcam2_quiet = 0;
 
 static void print_help(void) {
     fprintf(stderr,
@@ -59,179 +51,282 @@ static void print_help(void) {
         "  -l, --level N   zstd level 1-9 (default: 1)\n"
         "  --raw           c/d passthrough, no compression (testing)\n"
         "  -b, --benchmark Report timing + ratio\n"
+        "  -s, --stats     Show detailed statistics\n"
+        "  --compare       Run with and without dict, compare sizes\n"
+        "  --no-dict       Compress without dictionary\n"
+        "  --dict FILE     Use external dictionary file\n"
+        "  --list          Show file metadata without processing\n"
+        "  --test-all DIR  Batch test all .mp2 files in directory\n"
+        "  --csv           Output in CSV format\n"
         "  --verify        After pipe, verify byte-exact roundtrip\n"
         "  -V, --version   Print version\n"
-        "  -h, --help      This help\n"
-        "\n"
-        "Examples:\n"
-        "  packmp2 u -i in.mp2 -o out.um2 -q\n"
-        "  packmp2 c -i in.um2 -o out.tcam2 -l 3 -b\n"
-        "  packmp2 x -i in.mp2 -o out.mp2 --verify -b\n");
+        "  -h, --help      This help\n");
+}
+
+/* --list: show um2 or tcam2 metadata */
+static int list_file(const char *fn) {
+    FILE *f = fopen(fn, "rb");
+    if (!f) { perror(fn); return 1; }
+    unsigned char hdr[9];
+    if (fread(hdr, 1, 9, f) != 9) { fclose(f); return 1; }
+    if (hdr[0]=='u' && hdr[1]=='m' && hdr[2]=='2') {
+        unsigned long pre = (hdr[4]<<24)|(hdr[5]<<16)|(hdr[6]<<8)|hdr[7];
+        fprintf(stderr, "um2 v%u  preamble=%lu  ", hdr[3], pre);
+        /* Count blocks */
+        fseek(f, 8+pre, SEEK_SET);
+        int blocks=0, total_frames=0;
+        while (1) {
+            int hi=getc(f), lo=getc(f);
+            if (hi==EOF) break;
+            int nf = (hi<<8)|lo;
+            if (nf==0) { total_frames=-1; break; }
+            blocks++; total_frames+=nf;
+            /* Skip block data — too complex to parse fully.
+               Just report block count. */
+            break; /* only count first block for speed */
+        }
+        long fsize; fseek(f,0,SEEK_END); fsize=ftell(f);
+        fprintf(stderr, "blocks>=%d  file=%ld bytes\n", blocks, fsize);
+    } else if (hdr[0]=='T' && hdr[1]=='C' && hdr[2]=='A' && hdr[3]=='M') {
+        long osz = (hdr[5]<<24)|(hdr[6]<<16)|(hdr[7]<<8)|hdr[8];
+        long fsize; fseek(f,0,SEEK_END); fsize=ftell(f);
+        fprintf(stderr, "tcam2 v%u  original=%ld  compressed=%ld  ratio=%.1f%%\n",
+                hdr[4], osz, fsize-9, 100.0*(fsize-9)/osz);
+    } else {
+        fprintf(stderr, "unknown format: %02x%02x%02x%02x\n", hdr[0],hdr[1],hdr[2],hdr[3]);
+    }
+    fclose(f);
+    return 0;
+}
+
+/* Load external dictionary from file */
+static unsigned char *load_dict(const char *fn, size_t *dsize) {
+    FILE *f = fopen(fn, "rb");
+    if (!f) { perror(fn); return NULL; }
+    fseek(f, 0, SEEK_END);
+    *dsize = ftell(f);
+    rewind(f);
+    unsigned char *d = malloc(*dsize);
+    if (!d) { fclose(f); return NULL; }
+    fread(d, 1, *dsize, f);
+    fclose(f);
+    return d;
+}
+
+/* Test all MP2 files in a directory */
+static int test_all(const char *dir, int csv) {
+    DIR *d = opendir(dir);
+    if (!d) { perror(dir); return 1; }
+    if (!csv) fprintf(stderr, "Testing MP2 files in %s...\n", dir);
+    if (csv) printf("file,orig_size,tcam2_size,ratio_%%,roundtrip\n");
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL) {
+        char *n = e->d_name;
+        int nl = strlen(n);
+        if (nl<4) continue;
+        char *ext = n+nl-4;
+        if (strcasecmp(ext,".mp2")!=0 && strcasecmp(ext,".MP2")!=0) continue;
+        char path[1024]; snprintf(path,sizeof(path),"%s/%s",dir,n);
+        FILE *in = fopen(path, "rb");
+        if (!in) continue;
+        /* Read input */
+        fseek(in,0,SEEK_END); long orig=ftell(in); rewind(in);
+        unsigned char *idata = malloc(orig);
+        fread(idata,1,orig,in); fclose(in);
+        /* Pipe through TCAM2 */
+        FILE *mp2_f=fmemopen ? fmemopen(idata,orig,"rb") : tmpfile();
+        if (!fmemopen) { fwrite(idata,1,orig,mp2_f); rewind(mp2_f); }
+        FILE *um2_f=tmpfile(), *tc_f=tmpfile(), *um2_r=tmpfile();
+        int ok=0; long t2sz=0;
+        if (!unpack(mp2_f,um2_f)) {
+            rewind(um2_f);
+            if (!tcam2_compress(um2_f,tc_f,1)) {
+                t2sz=ftell(tc_f);
+                rewind(tc_f);
+                if (!tcam2_decompress(tc_f,um2_r)) {
+                    rewind(um2_r);
+                    FILE *out_f=tmpfile();
+                    if (!pack(um2_r,out_f)) {
+                        long osz=ftell(out_f);
+                        if (osz==orig) {
+                            rewind(out_f);
+                            unsigned char *od=malloc(osz);
+                            fread(od,1,osz,out_f);
+                            ok=(memcmp(idata,od,orig)==0);
+                            free(od);
+                        }
+                        fclose(out_f);
+                    }
+                }
+            }
+        }
+        fclose(mp2_f);fclose(um2_f);fclose(tc_f);fclose(um2_r);
+        free(idata);
+        if (csv) printf("%s,%ld,%ld,%.1f,%s\n",n,orig,t2sz,100.0*t2sz/orig,ok?"OK":"FAIL");
+        else fprintf(stderr,"  %-30s %8ld -> %8ld (%5.1f%%) %s\n",n,orig,t2sz,100.0*t2sz/orig,ok?"OK":"FAIL");
+    }
+    closedir(d);
+    return 0;
 }
 
 int main(int argc, char **argv) {
-    SET_BINARY_MODE(stdin);
-    SET_BINARY_MODE(stdout);
-
-    /* Parse command */
+    SET_BINARY_MODE(stdin); SET_BINARY_MODE(stdout);
     if (argc < 2) { print_help(); return 1; }
 
-    char cmd = 0;
-    int arg_start = 1;
-    if (strcmp(argv[1], "u") == 0 || strcmp(argv[1], "unpack") == 0)      cmd = 'u';
-    else if (strcmp(argv[1], "p") == 0 || strcmp(argv[1], "pack") == 0)   cmd = 'p';
-    else if (strcmp(argv[1], "c") == 0 || strcmp(argv[1], "compress") == 0) cmd = 'c';
-    else if (strcmp(argv[1], "d") == 0 || strcmp(argv[1], "decompress") == 0) cmd = 'd';
-    else if (strcmp(argv[1], "x") == 0 || strcmp(argv[1], "pipe") == 0)   cmd = 'x';
-    else if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) { print_help(); return 0; }
-    else if (strcmp(argv[1], "-V") == 0 || strcmp(argv[1], "--version") == 0) {
-        fprintf(stderr, "packMP2 v" VERSION "\n"); return 0;
+    /* --list, --test-all, -V, -h don't need a command */
+    if (strcmp(argv[1],"--list")==0 && argc>=3) { return list_file(argv[2]); }
+    if (strcmp(argv[1],"--test-all")==0 && argc>=3) {
+        int csv=0; for(int i=1;i<argc;i++) if(strcmp(argv[i],"--csv")==0) csv=1;
+        return test_all(argv[2], csv);
     }
-    else { arg_start = 0; cmd = '?'; } /* no command found, check first arg for flags */
+    if (strcmp(argv[1],"-V")==0||strcmp(argv[1],"--version")==0)
+        { fprintf(stderr,"packMP2 v" VERSION "\n"); return 0; }
+    if (strcmp(argv[1],"-h")==0||strcmp(argv[1],"--help")==0)
+        { print_help(); return 0; }
 
-    if (!cmd) { print_help(); return 1; }
+    /* Parse command */
+    char cmd=0; int arg_start=1;
+    if (strcmp(argv[1],"u")==0||strcmp(argv[1],"unpack")==0) cmd='u';
+    else if (strcmp(argv[1],"p")==0||strcmp(argv[1],"pack")==0) cmd='p';
+    else if (strcmp(argv[1],"c")==0||strcmp(argv[1],"compress")==0) cmd='c';
+    else if (strcmp(argv[1],"d")==0||strcmp(argv[1],"decompress")==0) cmd='d';
+    else if (strcmp(argv[1],"x")==0||strcmp(argv[1],"pipe")==0) cmd='x';
+    else { print_help(); return 1; }
 
     /* Parse options */
-    char *in_file = NULL, *out_file = NULL;
-    int quiet = 0, benchmark = 0, verify = 0, raw = 0, level = 1;
+    char *in_file=NULL, *out_file=NULL, *dict_file=NULL;
+    int quiet=0, benchmark=0, verify=0, raw=0, level=1, stats=0, no_dict=0, compare=0, csv=0;
+    unsigned char *ext_dict=NULL; size_t ext_dict_size=0;
 
-    for (int i = arg_start + 1; i < argc; i++) {
-        if (strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0)      quiet = 1;
-        else if (strcmp(argv[i], "-b") == 0 || strcmp(argv[i], "--benchmark") == 0) benchmark = 1;
-        else if (strcmp(argv[i], "--verify") == 0)                                verify = 1;
-        else if (strcmp(argv[i], "--raw") == 0)                                   raw = 1;
-        else if (strcmp(argv[i], "-V") == 0 || strcmp(argv[i], "--version") == 0)
-            { fprintf(stderr, "packMP2 v" VERSION "\n"); return 0; }
-        else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
+    for (int i=arg_start+1; i<argc; i++) {
+        if (strcmp(argv[i],"-q")==0||strcmp(argv[i],"--quiet")==0) quiet=1;
+        else if (strcmp(argv[i],"-b")==0||strcmp(argv[i],"--benchmark")==0) benchmark=1;
+        else if (strcmp(argv[i],"-s")==0||strcmp(argv[i],"--stats")==0) stats=1;
+        else if (strcmp(argv[i],"--verify")==0) verify=1;
+        else if (strcmp(argv[i],"--raw")==0) raw=1;
+        else if (strcmp(argv[i],"--no-dict")==0) no_dict=1;
+        else if (strcmp(argv[i],"--compare")==0) compare=1;
+        else if (strcmp(argv[i],"--csv")==0) csv=1;
+        else if (strcmp(argv[i],"-V")==0||strcmp(argv[i],"--version")==0)
+            { fprintf(stderr,"packMP2 v" VERSION "\n"); return 0; }
+        else if (strcmp(argv[i],"-h")==0||strcmp(argv[i],"--help")==0)
             { print_help(); return 0; }
-        else if ((strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--input") == 0) && i+1 < argc)
-            in_file = argv[++i];
-        else if ((strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) && i+1 < argc)
-            out_file = argv[++i];
-        else if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i+1 < argc)
-            level = atoi(argv[++i]);
-        else {
-            fprintf(stderr, "packMP2: unknown option: %s\n", argv[i]);
-            return 1;
-        }
+        else if ((strcmp(argv[i],"-i")==0||strcmp(argv[i],"--input")==0)&&i+1<argc)
+            in_file=argv[++i];
+        else if ((strcmp(argv[i],"-o")==0||strcmp(argv[i],"--output")==0)&&i+1<argc)
+            out_file=argv[++i];
+        else if ((strcmp(argv[i],"-l")==0||strcmp(argv[i],"--level")==0)&&i+1<argc)
+            level=atoi(argv[++i]);
+        else if ((strcmp(argv[i],"--dict")==0)&&i+1<argc)
+            dict_file=argv[++i];
+        else { fprintf(stderr,"packMP2: unknown option: %s\n",argv[i]); return 1; }
     }
 
     tcam2_quiet = quiet;
 
+    /* Load external dict if specified */
+    if (dict_file) {
+        ext_dict = load_dict(dict_file, &ext_dict_size);
+        if (!ext_dict) return 1;
+    }
+
     /* Open files */
-    FILE *in = stdin, *out = stdout;
-    if (in_file)  { in  = fopen(in_file,  "rb"); if (!in)  { perror(in_file);  return 1; } }
-    if (out_file) { out = fopen(out_file, "wb"); if (!out) { perror(out_file); return 1; } }
+    FILE *in=stdin, *out=stdout;
+    if (in_file) { in=fopen(in_file,"rb"); if(!in){perror(in_file);return 1;} }
+    if (out_file) { out=fopen(out_file,"wb"); if(!out){perror(out_file);return 1;} }
 
-    /* Execute command */
-    clock_t t0 = clock();
-    int rc = 0;
+    clock_t t0=clock();
+    int rc=0, cc;
 
-    switch (cmd) {
-    case 'u':
-        if (!quiet) fprintf(stderr, "packMP2: unpacking...\n");
-        rc = unpack(in, out);
-        break;
-    case 'p':
-        if (!quiet) fprintf(stderr, "packMP2: packing...\n");
-        rc = pack(in, out);
-        break;
-    case 'c':
-        if (raw) {
-            if (!quiet) fprintf(stderr, "packMP2: raw copy (no compression)...\n");
-            int c; while ((c = getc(in)) != EOF) putc(c, out);
-        } else {
-            if (!quiet) fprintf(stderr, "packMP2: compressing (level %d)...\n", level);
-            rc = tcam2_compress(in, out, level);
-        }
-        break;
-    case 'd':
-        if (raw) {
-            if (!quiet) fprintf(stderr, "packMP2: raw copy (no decompression)...\n");
-            int c; while ((c = getc(in)) != EOF) putc(c, out);
-        } else {
-            if (!quiet) fprintf(stderr, "packMP2: decompressing...\n");
-            rc = tcam2_decompress(in, out);
-        }
-        break;
-    case 'x': {
-        /* Pipe: unpack -> compress -> decompress -> pack */
-        /* Use temporary files for simplicity */
-        if (!quiet) fprintf(stderr, "packMP2: pipeline (unpack -> compress -> decompress -> pack)...\n");
-
-        /* Read all input */
-        long isz = 0, icap = 65536;
-        unsigned char *idata = malloc(icap);
-        if (!idata) { rc = 1; break; }
-        int c; while ((c = getc(in)) != EOF) {
-            if (isz >= icap) { icap *= 2; idata = realloc(idata, icap); }
-            idata[isz++] = (unsigned char)c;
-        }
-
-        /* Phase 1: unpack mp2 -> um2 (write input to temp file first) */
-        FILE *mp2_f = tmpfile(); if (!mp2_f) { free(idata); rc = 1; break; }
-        fwrite(idata, 1, isz, mp2_f); rewind(mp2_f);
-        FILE *um2_f = tmpfile(); if (!um2_f) { fclose(mp2_f); free(idata); rc = 1; break; }
-        t0 = clock();
-        rc = unpack(mp2_f, um2_f);
-        fclose(mp2_f);
-        if (rc) { fclose(um2_f); free(idata); break; }
-
-        /* Phase 2: compress um2 -> tcam2 (in memory) */
-        rewind(um2_f);
-        FILE *tc_f = tmpfile(); if (!tc_f) { fclose(um2_f); free(idata); rc = 1; break; }
-        rc = tcam2_compress(um2_f, tc_f, level);
-        fclose(um2_f);
-        if (rc) { fclose(tc_f); free(idata); break; }
-
-        /* Phase 3: decompress tcam2 -> um2 (in memory) */
-        rewind(tc_f);
-        FILE *um2_r = tmpfile(); if (!um2_r) { fclose(tc_f); free(idata); rc = 1; break; }
-        rc = tcam2_decompress(tc_f, um2_r);
-        fclose(tc_f);
-        if (rc) { fclose(um2_r); free(idata); break; }
-
-        /* Phase 4: pack um2 -> mp2 */
-        rewind(um2_r);
-        rc = pack(um2_r, out);
-        fclose(um2_r);
-
-        /* Verify if requested */
-        if (verify && rc == 0 && out_file) {
-            fclose(out); out = NULL; /* close so we can reopen for reading */
-            long osz = isz; /* use input size */
-            FILE *vrf = fopen(out_file, "rb");
-            if (!vrf) { perror(out_file); rc = 1; }
-            else {
-                fseek(vrf, 0, SEEK_END);
-                osz = ftell(vrf);
-                rewind(vrf);
-                unsigned char *odata = malloc(osz);
-                fread(odata, 1, osz, vrf);
-                fclose(vrf);
-                if (osz == isz && memcmp(idata, odata, isz) == 0)
-                    fprintf(stderr, "verify: BYTE-EXACT OK\n");
-                else {
-                    fprintf(stderr, "verify: MISMATCH (in=%ld out=%ld)\n", isz, osz);
-                    rc = 1;
-                }
-                free(odata);
-            }
-        }
+    /* --compare: compress with and without dict, compare sizes */
+    if (compare && cmd=='c') {
+        if (!quiet) fprintf(stderr,"packMP2: comparing dict vs no-dict...\n");
+        /* Read input */
+        long isz=0,icap=65536;unsigned char*idata=malloc(icap);
+        int cc; while((cc=getc(in))!=EOF){if(isz>=icap){icap*=2;idata=realloc(idata,icap);}idata[isz++]=cc;}
+        /* Compress with dict */
+        FILE *f1=tmpfile(); FILE *in1=tmpfile();
+        fwrite(idata,1,isz,in1); rewind(in1);
+        tcam2_compress(in1,f1,level);
+        long sz1=ftell(f1);
+        /* Compress without dict */
+        FILE *f2=tmpfile(); FILE *in2=tmpfile();
+        fwrite(idata,1,isz,in2); rewind(in2);
+        tcam2_compress_dict(in2,f2,level,NULL,0);
+        long sz2=ftell(f2);
+        /* Write dict version to output */
+        rewind(f1);
+        while((cc=getc(f1))!=EOF) putc(cc,out);
+        fclose(f1);fclose(f2);fclose(in1);fclose(in2);
+        if (csv) printf("%ld,%ld,%.1f\n",sz1,sz2,100.0*(sz2-sz1)/sz2);
+        else if (!quiet) fprintf(stderr,"  with dict: %ld  without: %ld  dict saves: %.1f%%\n",
+                                  sz1,sz2,100.0*(sz2-sz1)/sz2);
         free(idata);
-        break;
-    }
-    default:
-        print_help();
-        rc = 1;
+    } else {
+        /* Normal command execution */
+        switch (cmd) {
+        case 'u': if(!quiet)fprintf(stderr,"packMP2: unpacking...\n"); rc=unpack(in,out); break;
+        case 'p': if(!quiet)fprintf(stderr,"packMP2: packing...\n"); rc=pack(in,out); break;
+        case 'c':
+            if(raw){if(!quiet)fprintf(stderr,"packMP2: raw copy...\n");while((cc=getc(in))!=EOF)putc(cc,out);}
+            else{
+                if(!quiet)fprintf(stderr,"packMP2: compressing (level %d)...\n",level);
+                if(no_dict) rc=tcam2_compress_dict(in,out,level,NULL,0);
+                else if(ext_dict) rc=tcam2_compress_dict(in,out,level,ext_dict,ext_dict_size);
+                else rc=tcam2_compress(in,out,level);
+            } break;
+        case 'd':
+            if(raw){if(!quiet)fprintf(stderr,"packMP2: raw copy...\n");while((cc=getc(in))!=EOF)putc(cc,out);}
+            else{
+                if(!quiet)fprintf(stderr,"packMP2: decompressing...\n");
+                if(no_dict) rc=tcam2_decompress_dict(in,out,NULL,0);
+                else if(ext_dict) rc=tcam2_decompress_dict(in,out,ext_dict,ext_dict_size);
+                else rc=tcam2_decompress(in,out);
+            } break;
+        case 'x': {
+            if(!quiet)fprintf(stderr,"packMP2: pipeline...\n");
+            long isz=0,icap=65536;unsigned char*idata=malloc(icap);
+            while((cc=getc(in))!=EOF){if(isz>=icap){icap*=2;idata=realloc(idata,icap);}idata[isz++]=cc;}
+            FILE *mp2_f=tmpfile();fwrite(idata,1,isz,mp2_f);rewind(mp2_f);
+            FILE *um2_f=tmpfile(),*tc_f=tmpfile(),*um2_r=tmpfile();
+            if(!(rc=unpack(mp2_f,um2_f))){rewind(um2_f);
+            if(!(rc=tcam2_compress(um2_f,tc_f,level))){rewind(tc_f);
+            if(!(rc=tcam2_decompress(tc_f,um2_r))){rewind(um2_r);
+            rc=pack(um2_r,out);}}}
+            /* Verify */
+            if(verify&&rc==0&&out_file){fclose(out);out=NULL;
+                FILE *vrf=fopen(out_file,"rb");if(vrf){fseek(vrf,0,SEEK_END);
+                long osz=ftell(vrf);rewind(vrf);unsigned char*od=malloc(osz);fread(od,1,osz,vrf);fclose(vrf);
+                if(osz==isz&&memcmp(idata,od,isz)==0)fprintf(stderr,"verify: BYTE-EXACT OK\n");
+                else{fprintf(stderr,"verify: MISMATCH\n");rc=1;}free(od);}}
+            /* Stats */
+            if(stats&&rc==0){rewind(um2_f);fseek(um2_f,0,SEEK_END);
+                long um2sz=ftell(um2_f);rewind(tc_f);fseek(tc_f,0,SEEK_END);
+                long tcsz=ftell(tc_f);
+                if(csv) printf("%ld,%ld,%ld,%ld,%.1f,%.1f,%.1f\n",
+                    isz,um2sz,tcsz,(long)ftell(out),100.0*um2sz/isz,100.0*tcsz/um2sz,100.0*ftell(out)/isz);
+                else fprintf(stderr,"  mp2:%ld um2:%ld(%.1f%%) tcam2:%ld(%.1f%%) mp2_out:%ld(%.1f%%)\n",
+                    isz,um2sz,100.0*um2sz/isz,tcsz,100.0*tcsz/um2sz,(long)ftell(out),100.0*ftell(out)/isz);}
+            fclose(mp2_f);fclose(um2_f);fclose(tc_f);fclose(um2_r);free(idata);
+        } break;
+        default: print_help(); rc=1;
+        }
     }
 
-    double elapsed = (double)(clock() - t0) / CLOCKS_PER_SEC;
-    if (benchmark && rc == 0) {
-        fprintf(stderr, "  time: %.3fs  output: %ld bytes\n", elapsed, ftell(out));
+    double elapsed=(double)(clock()-t0)/CLOCKS_PER_SEC;
+    if (benchmark && rc==0) {
+        long outsz=ftell(out);
+        if (csv) printf("%.3f,%ld\n",elapsed,outsz);
+        else fprintf(stderr,"  time: %.3fs  output: %ld bytes\n",elapsed,outsz);
+    }
+    if (stats && rc==0 && cmd!='x') {
+        long outsz=ftell(out);
+        if (csv) printf("%.3f,%ld\n",elapsed,outsz);
+        else fprintf(stderr,"  time=%.3fs  output=%ld bytes\n",elapsed,outsz);
     }
 
-    if (in_file)  fclose(in);
+    if (in_file) fclose(in);
     if (out_file && out) fclose(out);
+    free(ext_dict);
     return rc;
 }

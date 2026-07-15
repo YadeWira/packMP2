@@ -6,7 +6,8 @@
 
 int tcam2_quiet = 0;
 
-int tcam2_compress(FILE *in, FILE *out, int level) {
+int tcam2_compress_dict(FILE *in, FILE *out, int level,
+                         const unsigned char *dict, size_t dict_size) {
     long sz=0,cap=65536;unsigned char*data=malloc(cap);if(!data)return 1;int c;
     while((c=getc(in))!=EOF){if(sz>=cap){cap*=2;data=realloc(data,cap);}data[sz++]=c;}
     putc('T',out);putc('C',out);putc('A',out);putc('M',out);putc('2',out);
@@ -16,10 +17,18 @@ int tcam2_compress(FILE *in, FILE *out, int level) {
     unsigned char*zout=malloc(bound);if(!zout){free(data);return 1;}
     ZSTD_CCtx*cctx=ZSTD_createCCtx();
     if(level<1)level=1;if(level>9)level=9;
-    long csz=ZSTD_compress_usingDict(cctx,zout,bound,data,sz,TCAM2_DICT,TCAM2_DICT_SIZE,level);
+    long csz;
+    if(dict && dict_size>0)
+        csz=ZSTD_compress_usingDict(cctx,zout,bound,data,sz,dict,dict_size,level);
+    else
+        csz=ZSTD_compress2(cctx,zout,bound,data,sz);
     ZSTD_freeCCtx(cctx);
     if(ZSTD_isError(csz)){free(data);free(zout);return 1;}
     fwrite(zout,1,csz,out);free(zout);free(data);
     if(!tcam2_quiet) fprintf(stderr,"TCAM2: %ld -> %ld bytes (%.1f%%)\n",sz,ftell(out),100.0*ftell(out)/(sz?sz:1));
     return 0;
+}
+
+int tcam2_compress(FILE *in, FILE *out, int level) {
+    return tcam2_compress_dict(in, out, level, TCAM2_DICT, TCAM2_DICT_SIZE);
 }

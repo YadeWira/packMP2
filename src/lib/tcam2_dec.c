@@ -4,7 +4,8 @@
 #include <zstd.h>
 #include "tcam2_dict.h"
 
-int tcam2_decompress(FILE *in, FILE *out) {
+int tcam2_decompress_dict(FILE *in, FILE *out,
+                           const unsigned char *dict, size_t dict_size) {
     if(getc(in)!='T'||getc(in)!='C'||getc(in)!='A'||getc(in)!='M'||getc(in)!='2')
     {fprintf(stderr,"TCAM2: bad header\n");return 1;}
     long osz=((long)getc(in)<<24)|((long)getc(in)<<16)|((long)getc(in)<<8)|getc(in);
@@ -14,9 +15,17 @@ int tcam2_decompress(FILE *in, FILE *out) {
     if(dsz==ZSTD_CONTENTSIZE_ERROR||dsz==ZSTD_CONTENTSIZE_UNKNOWN)dsz=osz;
     unsigned char*data=malloc(dsz);if(!data){free(cmp);return 1;}
     ZSTD_DCtx*dctx=ZSTD_createDCtx();
-    long act=ZSTD_decompress_usingDict(dctx,data,dsz,cmp,csz,TCAM2_DICT,TCAM2_DICT_SIZE);
+    long act;
+    if(dict && dict_size>0)
+        act=ZSTD_decompress_usingDict(dctx,data,dsz,cmp,csz,dict,dict_size);
+    else
+        act=ZSTD_decompressDCtx(dctx,data,dsz,cmp,csz);
     ZSTD_freeDCtx(dctx);free(cmp);
     if(ZSTD_isError(act)||act!=(long)dsz){free(data);return 1;}
     fwrite(data,1,dsz,out);free(data);
     return 0;
+}
+
+int tcam2_decompress(FILE *in, FILE *out) {
+    return tcam2_decompress_dict(in, out, TCAM2_DICT, TCAM2_DICT_SIZE);
 }

@@ -61,6 +61,10 @@ typedef enum {
 /* ---- API ---- */
 extern int tcam2_quiet;  /* set to 1 to suppress stderr output */
 int  tcam2_compress  (FILE *um2_in, FILE *tcam2_out, int level);
+int  tcam2_compress_dict(FILE *in, FILE *out, int level,
+                          const unsigned char *dict, size_t dict_size);
+int  tcam2_decompress_dict(FILE *in, FILE *out,
+                            const unsigned char *dict, size_t dict_size);
 int  tcam2_decompress(FILE *tcam2_in, FILE *um2_out);
 
 #endif /* TCAM2_H */
