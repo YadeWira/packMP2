@@ -134,6 +134,13 @@ reference/         Legacy files (original sources, binaries, tools)
 TCAM2 is **131x faster** than lpaq8 with only 3.7 points ratio gap.
 All 13 test samples pass byte-exact roundtrip.
 
+For **maximum compression** (near lpaq8), pipe through zpaq:
+```sh
+packmp2 u < input.mp2 | zpaq a output.zpaq - -m5 -f
+zpaq x output.zpaq -to - | packmp2 p > output.mp2
+```
+zpaq -m5 on um2 achieves **81.5%** (vs lpaq8 81.2%) at ~1.7s.
+
 ## License
 
 GNU GPL v3 — see `LICENSE`.
