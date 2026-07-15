@@ -113,8 +113,9 @@ static unsigned char *load_dict(const char *fn, size_t *dsize) {
     return d;
 }
 
-/* Test all MP2 files in a directory */
+/* Test all MP2 files in a directory (POSIX only) */
 static int test_all(const char *dir, int csv) {
+#ifndef _WIN32
     DIR *d = opendir(dir);
     if (!d) { perror(dir); return 1; }
     if (!csv) fprintf(stderr, "Testing MP2 files in %s...\n", dir);
@@ -134,8 +135,8 @@ static int test_all(const char *dir, int csv) {
         unsigned char *idata = malloc(orig);
         fread(idata,1,orig,in); fclose(in);
         /* Pipe through TCAM2 */
-        FILE *mp2_f=fmemopen ? fmemopen(idata,orig,"rb") : tmpfile();
-        if (!fmemopen) { fwrite(idata,1,orig,mp2_f); rewind(mp2_f); }
+        FILE *mp2_f=tmpfile();
+        fwrite(idata,1,orig,mp2_f); rewind(mp2_f);
         FILE *um2_f=tmpfile(), *tc_f=tmpfile(), *um2_r=tmpfile();
         int ok=0; long t2sz=0;
         if (!unpack(mp2_f,um2_f)) {
@@ -166,6 +167,10 @@ static int test_all(const char *dir, int csv) {
         else fprintf(stderr,"  %-30s %8ld -> %8ld (%5.1f%%) %s\n",n,orig,t2sz,100.0*t2sz/orig,ok?"OK":"FAIL");
     }
     closedir(d);
+#else
+    fprintf(stderr, "packMP2: --test-all not available on Windows\n");
+    (void)dir; (void)csv;
+#endif
     return 0;
 }
 
