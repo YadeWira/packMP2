@@ -69,6 +69,8 @@ Options:
   -o, --output F  Write to file (default: stdout)
   -q, --quiet     Suppress progress messages
   -l, --level N   zstd level 1-9 (default: 1)
+  -O, --optimized SCFSI packing + scalefactor delta
+  --zpaq N        Use zpaq context-mixing 1-5 (best ratio)
   -b, --benchmark Report timing + ratio
   -s, --stats     Show detailed statistics
   --compare       Compress with/without dict, compare
@@ -103,10 +105,12 @@ src/
     ├── pack.c         Read um2, repack to MP2 (+ packFrame)
     ├── unpack.c       Decompose MP2, write um2
     ├── tcam2.h        TCAM2 API
-    ├── tcam2_enc.c    TCAM2 encoder
+    ├── tcam2_enc.c    TCAM2 encoder (zstd / zpaq)
     ├── tcam2_dec.c    TCAM2 decoder
-    └── tcam2_dict.h   Trained zstd dictionary (110 KB, 5 samples)
+    ├── tcam2_dict.h   Trained zstd dictionary (110 KB, 5 samples)
+    └── lite_stubs.c   Stubs for lite build (unpack/pack only)
 vendor/zstd/       Vendored zstd 1.5.7 (zero external deps)
+vendor/zpaq/       Vendored libzpaq 7.12 + C wrapper (zpaq_c)
 reference/         Legacy files (original sources, binaries, tools)
 ```
 
@@ -127,19 +131,27 @@ reference/         Legacy files (original sources, binaries, tools)
 | Method | Compressed | Ratio | Encode | Decode |
 |--------|-----------|-------|--------|--------|
 | lpaq8 5 via um2 | 561,496 | 81.2% | 1.36s | 1.84s |
-| **packmp2 c (dict+zstd)** | **586,846** | **84.9%** | **0.010s** | **0.007s** |
-| zstd -1 via um2 | 641,658 | 92.8% | 0.014s | 0.009s |
-| gzip -6 via um2 | 655,177 | 94.8% | 0.29s | 0.009s |
+| **packmp2 c --zpaq 5** | **561,892** | **81.3%** | **3.10s** | **3.38s** |
+| **packmp2 c --zpaq 4** | **569,303** | **82.4%** | **0.98s** | **1.01s** |
+| **packmp2 c --zpaq 3** | **583,029** | **84.3%** | **0.49s** | **0.34s** |
+| **packmp2 c (dict+zstd)** | **623,056** | **90.1%** | **0.013s** | **0.007s** |
 
-TCAM2 is **131x faster** than lpaq8 with only 3.7 points ratio gap.
-All 13 test samples pass byte-exact roundtrip.
+Key takeaways:
+- **zpaq m5** matches lpaq8 ratio (81.3% vs 81.2%) — context mixing with full CM models
+- **zpaq m4** is 2× faster than lpaq8 at only 1.2 points worse ratio
+- **zpaq m3** is 4× faster decode than lpaq8 at 84.3% ratio
+- **TCAM2 zstd+dict** is **100× faster** than lpaq8 for real-time use
 
-For **maximum compression** (near lpaq8), pipe through zpaq:
+All 9 test samples pass byte-exact roundtrip.
+
+Built-in zpaq via `--zpaq N` flag (no external binary needed):
 ```sh
-packmp2 u < input.mp2 | zpaq a output.zpaq - -m5 -f
-zpaq x output.zpaq -to - | packmp2 p > output.mp2
+# Maximum compression:
+packmp2 x --zpaq 5 -i input.mp2 -o output.mp2 --verify
+
+# Balanced (speed + ratio):
+packmp2 x --zpaq 4 -i input.mp2 -o output.mp2 --verify
 ```
-zpaq -m5 on um2 achieves **81.5%** (vs lpaq8 81.2%) at ~1.7s.
 
 ## License
 
