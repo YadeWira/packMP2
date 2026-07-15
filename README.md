@@ -94,67 +94,23 @@ reference/         Legacy files (original sources, binaries, tools)
 | unpackmp2 \| 7z PPMd  | ultra           | 120.6 MB (91.4%) |
 | lpaq8 (no unpack)     | 5               | 123.3 MB (93.5%) |
 
-## License
-
-GNU GPL v3 — see `gpl-3.0.txt`.
-
-The original `unpackmp2` uses code/ideas from:
-- amp11 by Niklas Beisert
-- libmad by Underbit Technologies, Inc.
-- libtwolame by TwoLAME Authors
-
-lpaq8 compressor (C) 2007 Matt Mahoney, Alexander Ratushnyak.
-
-## TCAM2 — Tovy Compresor de Audio MP2
-
-Domain-optimized compressor for um2 files. Uses zstd level 1 with a
-pre-trained 110KB dictionary for fast, high-ratio compression.
-
-### Usage
-
-```
-# Compress (pipe-friendly)
-packmp2 u < input.mp2 | packmp2 c > output.tcam2
-
-# Decompress
-packmp2 d < input.tcam2 | packmp2 p > output.mp2
-```
-
-### Benchmarks (example.mp2, 691 KB, 160kbps stereo)
+## TCAM2 Benchmarks (example.mp2, 691 KB, 160kbps stereo)
 
 | Method | Compressed | Ratio | Encode | Decode |
 |--------|-----------|-------|--------|--------|
 | lpaq8 5 via um2 | 561,496 | 81.2% | 1.36s | 1.84s |
-| **TCAM2 (dict+zstd)** | **586,846** | **84.9%** | **0.010s** | **0.007s** |
+| **packmp2 c (dict+zstd)** | **586,846** | **84.9%** | **0.010s** | **0.007s** |
 | zstd -1 via um2 | 641,658 | 92.8% | 0.014s | 0.009s |
 | gzip -6 via um2 | 655,177 | 94.8% | 0.29s | 0.009s |
 
-TCAM2 is **131x faster** than lpaq8 at only 3.7 points worse ratio.
+TCAM2 is **131x faster** than lpaq8 with only 3.7 points ratio gap.
 All 13 test samples pass byte-exact roundtrip.
 
-### Project structure
+## License
 
-```
-src/
-├── unpackmp2.h   Types, constants, declarations
-├── globals.c      MPEG tables, global frame buffer
-├── bitio.c        Bit-level I/O (fbgetbits/fbputbits)
-├── frame.c        Frame header parsing, CRC-16
-├── pack.c         Read um2, repack to MP2 (+ packFrame)
-├── unpack.c       Decompose MP2 frames, write um2
-├── main.c         unpackmp2 entry point
-├── tcam2.h        TCAM2 API
-├── tcam2.c        TCAM2 CLI entry point
-├── tcam2_enc.c    TCAM2 encoder (zstd + dictionary)
-├── tcam2_dec.c    TCAM2 decoder (zstd + dictionary)
-└── tcam2_dict.h   Trained zstd dictionary (110 KB, 5 samples)
-tools/             Windows .cmd helper scripts (testing)
-lpaq8_stdinout/    Modified lpaq8 (stdin/stdout, reference/testing)
-build/             Build artifacts (not tracked)
-```
+GNU GPL v3 — see `LICENSE`.
 
-**Note on binaries:** The executables in this repo (`unpackmp2.exe`,
-`lpaq8.exe`, `lpaq8_stdinout/`) are the original Windows builds (2009-2010),
-included for reference and testing. They are not needed on Linux — `make`
-produces native binaries. For packMP3, only the `.o` files from `pack.c`,
-`unpack.c`, `frame.c`, `bitio.c`, and `globals.c` will be linked.
+unpackmp2 uses code/ideas from: amp11 by Niklas Beisert, libmad by
+Underbit Technologies, Inc., libtwolame by TwoLAME Authors.
+
+lpaq8 compressor (C) 2007 Matt Mahoney, Alexander Ratushnyak.
