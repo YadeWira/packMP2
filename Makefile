@@ -35,7 +35,7 @@ $(OBJDIR)/%.o: $(LIBDIR)/%.c $(LIBDIR)/unpackmp2.h | $(OBJDIR)
 	$(CC) $(CFLAGS) -I$(LIBDIR) -c $< -o $@
 
 $(OBJDIR)/main.o: $(SRCDIR)/main.c $(LIBDIR)/unpackmp2.h $(LIBDIR)/tcam2.h | $(OBJDIR)
-	$(CC) $(CFLAGS) -I$(LIBDIR) -c $< -o $@
+	$(CC) $(CFLAGS) -I$(LIBDIR) -c $(SRCDIR)/main.c -o $@
 
 $(OBJDIR):
 	mkdir -p $(OBJDIR)
