@@ -158,9 +158,7 @@ int pack_opt(FILE* infile, FILE* outfile, int opt) {
                     if (i < u->jsBound) {
                         u->bitalloc2BITS[1][i] = b >> 4;
                         u->bitalloc2[1][i] = alloc[i][b >> 4];
-                    } else {
-                        u->bitalloc2[1][i] = u->bitalloc2[0][i];
-                    }
+                    } else { u->bitalloc2[1][i] = u->bitalloc2[0][i]; }
                 }
             }
         }
