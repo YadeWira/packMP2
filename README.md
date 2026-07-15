@@ -14,7 +14,7 @@ the libraries directly.
 more compressible with general-purpose compressors. Roundtrip is
 byte-exact for the audio payload (v1.2 preserves ID3 tags, padding, etc.).
 
-**TCAM2** (Tovy Compressor de Audio MP2): Domain-optimized compressor for
+**TCAM2** (Tovy Compresor de Audio MP2): Domain-optimized compressor for
 um2 files. Uses zstd level 1 with a 110 KB dictionary trained across
 multiple MP2 samples. 131x faster than lpaq8 with only a 3.7 point
 ratio gap.
@@ -118,7 +118,7 @@ The original `unpackmp2` uses code/ideas from:
 
 lpaq8 compressor (C) 2007 Matt Mahoney, Alexander Ratushnyak.
 
-## TCAM2 — Tovy Compressor de Audio MP2
+## TCAM2 — Tovy Compresor de Audio MP2
 
 Domain-optimized compressor for um2 files. Uses zstd level 1 with a
 pre-trained 110KB dictionary for fast, high-ratio compression.
