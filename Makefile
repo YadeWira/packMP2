@@ -24,12 +24,18 @@ MAIN_OBJ  = $(OBJDIR)/main.o
 TARGET    = packmp2
 ALL_OBJ   = $(MAIN_OBJ) $(LIB_OBJ) $(TCAM2_OBJ)
 
-.PHONY: all clean dist mingw mingw64
+.PHONY: all clean dist mingw mingw64 lite
 
 all: $(TARGET)
 
 $(TARGET): $(ALL_OBJ)
 	$(CC) $(ALL_OBJ) $(LDFLAGS) -lzstd -o $@
+
+# Lite build: no zstd dependency, unpack/pack only
+lite: LITE_OBJ = $(MAIN_OBJ) $(LIB_OBJ)
+lite: $(LITE_OBJ)
+	$(CC) $(LITE_OBJ) $(LDFLAGS) -o packmp2
+	@echo "  Built packmp2 (lite: unpack/pack only, no TCAM2)"
 
 $(OBJDIR)/%.o: $(LIBDIR)/%.c $(LIBDIR)/unpackmp2.h | $(OBJDIR)
 	$(CC) $(CFLAGS) -I$(LIBDIR) -c $< -o $@

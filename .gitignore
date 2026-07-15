@@ -11,3 +11,7 @@ packmp2.exe
 # OS
 .DS_Store
 Thumbs.db
+*.exe
+packmp2-linux-*
+tcam2
+unpackmp2

@@ -25,6 +25,19 @@ extern int tcam2_compress(FILE *in, FILE *out, int level);
 extern int tcam2_decompress(FILE *in, FILE *out);
 extern int tcam2_quiet;
 
+/* Weak stubs for lite build (no zstd) */
+__attribute__((weak)) int tcam2_compress(FILE *in, FILE *out, int level) {
+    (void)in;(void)out;(void)level;
+    fprintf(stderr,"TCAM2 not available (lite build). Use --raw for passthrough.\n");
+    return 1;
+}
+__attribute__((weak)) int tcam2_decompress(FILE *in, FILE *out) {
+    (void)in;(void)out;
+    fprintf(stderr,"TCAM2 not available (lite build). Use --raw for passthrough.\n");
+    return 1;
+}
+__attribute__((weak)) int tcam2_quiet = 0;
+
 static void print_help(void) {
     fprintf(stderr,
         "packMP2 v" VERSION " — MPEG Audio Layer II lossless transform + compression\n"

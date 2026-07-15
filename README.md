@@ -41,13 +41,14 @@ Roundtrip is byte-exact for the complete file.
 ## Build
 
 ```sh
-make          # Linux native → ./packmp2
-make mingw    # Windows 32-bit cross-compile
-make mingw64  # Windows 64-bit cross-compile
+make          # Full build (requires libzstd-dev) → ./packmp2
+make lite     # Unpack/pack only (zero deps, just gcc+make)
+make mingw    # Windows 32-bit cross-compile (unpack/pack only)
+make mingw64  # Windows 64-bit cross-compile (unpack/pack only)
 make clean    # Remove build artifacts
 ```
 
-Requires `gcc`, `make`, `libzstd-dev`.
+`make` needs `libzstd-dev`. `make lite` solo necesita `gcc` + `make`.
 
 ## Usage
 
