@@ -100,6 +100,7 @@ U32  updateCRC(U32 crc, unsigned char value, int n);
 void writeHeaderCRC(unpackmp2_t* u);
 
 /* pack.c */
+extern int unpackmp2_quiet;  /* set to 1 to suppress info stderr output */
 void packFrame(unpackmp2_t* u);
 int  pack(FILE* infile, FILE* outfile);
 int  pack_optimized(FILE* infile, FILE* outfile);

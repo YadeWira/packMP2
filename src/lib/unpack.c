@@ -141,7 +141,7 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
                 }
             }
             if (skipped != 0) {
-                fprintf(stderr, "skipped(%d) frame(%d)\n", skipped, framecount);
+                if(!unpackmp2_quiet) fprintf(stderr, "skipped(%d) frame(%d)\n", skipped, framecount);
             }
             if (feof(infile)) {
                 break;
@@ -322,7 +322,7 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
                 }
             }
         }
-        fprintf(stderr, "unpacked mp2 frames: %d\n", framecount);
+        if(!unpackmp2_quiet) fprintf(stderr, "unpacked mp2 frames: %d\n", framecount);
         if (ferror(outfile)) {
             perror("write unpacked frame");
             return 4;

@@ -8,6 +8,9 @@
 /* Global frame buffer array */
 unpackmp2_t UM2_ARRAY[MAX_FRAMES_PER_BLOCK];
 
+/* Suppress informational stderr output from unpack/pack */
+int unpackmp2_quiet = 0;
+
 /* MPEG frame header lookup tables */
 const char  FRMHDR_LSF[4]        = {2, 3, 1, 0};
 const int   FRMHDR_FREQUENCY[4]  = {44100, 48000, 32000, -1};

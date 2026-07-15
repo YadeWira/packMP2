@@ -72,16 +72,22 @@ int packmp2_compress(const unsigned char *in,  size_t  in_len,
     }
     fwrite(in, 1, in_len, mp2_f); rewind(mp2_f);
 
+    /* Suppress info stderr from internal functions (errors still print) */
+    int saved_quiet = unpackmp2_quiet; unpackmp2_quiet = 1;
+    int saved_tc_quiet = tcam2_quiet; tcam2_quiet = 1;
+
     int rc = unpack(mp2_f, um2_f);
     fclose(mp2_f);
-    if (rc) { fclose(um2_f); snprintf(msg,256,"packmp2: unpack failed"); return 1; }
+    if (rc) { fclose(um2_f); unpackmp2_quiet=saved_quiet; tcam2_quiet=saved_tc_quiet;
+              snprintf(msg,256,"packmp2: unpack failed"); return 1; }
 
     /* Read um2 into buffer */
     rewind(um2_f);
     size_t um2_len=0;
     unsigned char *um2_data = slurp_file(um2_f, &um2_len);
     fclose(um2_f);
-    if (!um2_data) { snprintf(msg,256,"packmp2: malloc failed"); return 1; }
+    if (!um2_data) { unpackmp2_quiet=saved_quiet; tcam2_quiet=saved_tc_quiet;
+                     snprintf(msg,256,"packmp2: malloc failed"); return 1; }
 
     /* Step 2: compress um2 -> tcam2/zpaq */
     if (method == PACKMP2_METHOD_ZPAQ) {
@@ -124,7 +130,10 @@ int packmp2_compress(const unsigned char *in,  size_t  in_len,
         free(*out);
         *out_len = 10 + in_len;  /* RAW2(4) + ver(1) + size(4) + payload */
         *out = malloc(*out_len);
-        if (!*out) { snprintf(msg,256,"packmp2: malloc failed"); return 1; }
+        if (!*out) {
+            unpackmp2_quiet = saved_quiet; tcam2_quiet = saved_tc_quiet;
+            snprintf(msg,256,"packmp2: malloc failed"); return 1;
+        }
         memcpy(*out,     "RAW2", 4);
         (*out)[4] = 0x01;  /* version */
         (*out)[5] = (in_len>>24)&0xFF;
@@ -135,6 +144,7 @@ int packmp2_compress(const unsigned char *in,  size_t  in_len,
         memcpy(*out + 10, in, in_len);
     }
 
+    unpackmp2_quiet = saved_quiet; tcam2_quiet = saved_tc_quiet;
     return 0;
 }
 
@@ -146,6 +156,9 @@ int packmp2_decompress(const unsigned char *in,  size_t  in_len,
     msg[0]=0;
 
     if (in_len < 4) { snprintf(msg,256,"packmp2: input too short"); return 1; }
+
+    int saved_quiet = unpackmp2_quiet; unpackmp2_quiet = 1;
+    int saved_tc_quiet = tcam2_quiet; tcam2_quiet = 1;
 
     /* Auto-detect format: RAW2 = stored mp2, TCAM2 = "TCAM2", zpaq = 0x37 '7' */
     unsigned char *dec_data = NULL;
@@ -162,6 +175,7 @@ int packmp2_decompress(const unsigned char *in,  size_t  in_len,
         *out = malloc(raw_osz);
         if (!*out) { snprintf(msg,256,"packmp2: malloc failed"); return 1; }
         memcpy(*out, in + 10, raw_osz);
+        unpackmp2_quiet = saved_quiet; tcam2_quiet = saved_tc_quiet;
         return 0;  /* done — RAW2 is already mp2, no pack step needed */
     }
 
@@ -210,6 +224,7 @@ int packmp2_decompress(const unsigned char *in,  size_t  in_len,
     fclose(mp2_f);
     if (!*out) { snprintf(msg,256,"packmp2: malloc failed"); return 1; }
 
+    unpackmp2_quiet = saved_quiet; tcam2_quiet = saved_tc_quiet;
     return 0;
 }
 

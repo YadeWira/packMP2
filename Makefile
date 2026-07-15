@@ -75,12 +75,12 @@ $(OBJDIR)/zpaq_%.o: $(ZPAQ_DIR)/%.cpp $(ZPAQ_DIR)/zpaq_c.h | $(OBJDIR)
 $(OBJDIR):
 	mkdir -p $(OBJDIR)
 
-# Windows cross-compile (full TCAM2 via vendored zstd + zpaq)
+# Windows cross-compile (full TCAM2 via vendored zstd + zpaq, static link)
 mingw:
-	$(MAKE) clean >/dev/null && $(MAKE) CC=i686-w64-mingw32-gcc CXX=i686-w64-mingw32-g++ TARGET=packmp2.exe all
+	$(MAKE) clean >/dev/null && $(MAKE) CC=i686-w64-mingw32-gcc CXX=i686-w64-mingw32-g++ TARGET=packmp2.exe LDFLAGS="-static -lpthread" all
 
 mingw64:
-	$(MAKE) clean >/dev/null && $(MAKE) CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ TARGET=packmp2.exe all
+	$(MAKE) clean >/dev/null && $(MAKE) CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ TARGET=packmp2.exe LDFLAGS="-static -lpthread" all
 
 clean:
 	rm -rf $(OBJDIR) packmp2 packmp2.exe zpaq-fast

@@ -308,7 +308,7 @@ int pack_opt(FILE* infile, FILE* outfile, int opt) {
                 return 5;
             }
         }
-        fprintf(stderr, "packed um2 frames: %d\n", framecount);
+        if(!unpackmp2_quiet) fprintf(stderr, "packed um2 frames: %d\n", framecount);
     }
     /* NOTREACHED */
     return 0;
