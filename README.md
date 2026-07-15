@@ -1,13 +1,23 @@
 # unpackmp2 + TCAM2
 
-Lossless transformation + compression for MPEG Audio Layer II (MP2).
+Lossless MPEG Audio Layer II (MP2) transformation + compression.
 
-**unpackmp2**: Reorders MP2 frames into structured um2 format — more
-compressible with general-purpose compressors. Roundtrip is byte-exact
-for the audio payload (v1.2 preserves ID3 tags, padding, etc.).
+**packMP2** es un subproyecto de **packMP3**. Provee el codec para la
+capa MP2: reordenamiento de frames (unpackmp2) + compresión optimizada
+(TCAM2). Será integrado como submódulo/lib en packMP3.
 
-**TCAM2**: Domain-optimized um2 compressor. Uses zstd with a trained
-dictionary for fast, high-ratio compression.
+Los binarios incluidos (`unpackmp2`, `tcam2`, `lpaq8`) son para
+desarrollo/testing. En producción, packMP3 usará las bibliotecas
+directamente.
+
+**unpackmp2**: Reordena frames MP2 al formato estructurado `um2` —
+más comprimible con compresores genéricos. Roundtrip byte-exact
+para el payload de audio (v1.2 preserva tags ID3, padding, etc.).
+
+**TCAM2** (Tovy Compresor de Audio MP2): Compresor optimizado para
+archivos um2. Usa zstd nivel 1 con diccionario de 110 KB entrenado
+sobre múltiples samples MP2. 131x más rápido que lpaq8 con solo
+3.7 puntos de diferencia en ratio.
 
 Copyright (C) 2009-2010 Michael Henke (unpackmp2) — GPLv3.
 Copyright (C) 2026 Tovy (TCAM2) — GPLv3.
@@ -147,14 +157,21 @@ src/
 ├── globals.c      MPEG tables, global frame buffer
 ├── bitio.c        Bit-level I/O (fbgetbits/fbputbits)
 ├── frame.c        Frame header parsing, CRC-16
-├── pack.c         Read um2, repack to MP2
+├── pack.c         Read um2, repack to MP2 (+ packFrame)
 ├── unpack.c       Decompose MP2 frames, write um2
 ├── main.c         unpackmp2 entry point
 ├── tcam2.h        TCAM2 API
 ├── tcam2.c        TCAM2 CLI entry point
 ├── tcam2_enc.c    TCAM2 encoder (zstd + dictionary)
 ├── tcam2_dec.c    TCAM2 decoder (zstd + dictionary)
-└── tcam2_dict.h   Trained zstd dictionary (110 KB)
-tools/             Windows .cmd helper scripts
-lpaq8_stdinout/    Modified lpaq8 compressor (stdin/stdout)
+└── tcam2_dict.h   Trained zstd dictionary (110 KB, 5 samples)
+tools/             Windows .cmd helper scripts (testing)
+lpaq8_stdinout/    Modified lpaq8 (stdin/stdout, reference/testing)
+build/             Build artifacts (not tracked)
 ```
+
+**Nota sobre binarios:** Los ejecutables en el repo (`unpackmp2.exe`,
+`lpaq8.exe`, `lpaq8_stdinout/`) son los originales de Windows (2009-2010)
+incluidos para referencia y testing. No son necesarios en Linux — `make`
+produce binarios nativos. Para packMP3, solo se linkearán los `.o` de
+`pack.c`, `unpack.c`, `frame.c`, `bitio.c`, `globals.c`.
