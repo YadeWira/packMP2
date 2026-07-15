@@ -102,11 +102,9 @@ void writeHeaderCRC(unpackmp2_t* u);
 /* pack.c */
 void packFrame(unpackmp2_t* u);
 int  pack(FILE* infile, FILE* outfile);
-int  pack_preprocess(FILE* infile, unsigned char **pp_out, long *pp_size);
 
 /* unpack.c */
 void unpackFrame(unpackmp2_t* u);
 int  unpack(FILE* infile, FILE* outfile);
-int  unpack_from_pp(unsigned char *pp, long pp_size, FILE *out);
 
 #endif /* UNPACKMP2_H */

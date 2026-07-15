@@ -17,18 +17,12 @@ OBJECTS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SOURCES))
 
 TARGET  = unpackmp2
 
-# TCAM2 sources (links with unpackmp2 objects for packPreprocess/fromPP)
+# TCAM2 sources
 TCAM2_SRC = $(SRCDIR)/tcam2.c $(SRCDIR)/tcam2_enc.c $(SRCDIR)/tcam2_dec.c
-TCAM2_OBJ = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(TCAM2_SRC)) \
-            $(OBJDIR)/globals.o $(OBJDIR)/frame.o $(OBJDIR)/bitio.o \
-            $(OBJDIR)/pack.o $(OBJDIR)/unpack.o
+TCAM2_OBJ = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(TCAM2_SRC))
 TCAM2     = tcam2
 
-# lpaq compressors
-LPQ8      = lpaq8
-LPQ9      = lpaq9m
-
-.PHONY: all clean dist mingw mingw64 tcam2 lpaq8 lpaq9m
+.PHONY: all clean dist mingw mingw64 tcam2 lpaq8
 
 all: $(TARGET) $(TCAM2)
 
@@ -41,21 +35,15 @@ $(TCAM2): $(TCAM2_OBJ)
 $(OBJDIR)/%.o: $(SRCDIR)/%.c $(SRCDIR)/unpackmp2.h | $(OBJDIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(OBJDIR)/tcam2_enc.o $(OBJDIR)/tcam2_dec.o: $(SRCDIR)/tcam2.h
+$(OBJDIR)/tcam2_enc.o $(OBJDIR)/tcam2_dec.o: $(SRCDIR)/tcam2_dict.h
 
 $(OBJDIR):
 	mkdir -p $(OBJDIR)
 
-# lpaq8 (32-bit — original code assumes 32-bit integers)
-lpaq8: $(LPQ8)
-$(LPQ8):
+# lpaq8 reference compressor (32-bit — original code uses 32-bit ints)
+lpaq8:
 	g++ -m32 $(CXXFLAGS) lpaq8_stdinout/lpaq8_stdinout.cpp -o $@ 2>/dev/null || \
 	g++ $(CXXFLAGS) lpaq8_stdinout/lpaq8_stdinout.cpp -o $@
-
-# lpaq9m (64-bit safe)
-lpaq9m: $(LPQ9)
-$(LPQ9):
-	$(CXX) $(CXXFLAGS) lpaq9m/lpaq9m_stdinout.cpp -o $@
 
 # MinGW 32-bit cross-compile
 mingw: CC = i686-w64-mingw32-gcc
@@ -70,7 +58,7 @@ mingw64: TARGET = unpackmp2.exe
 mingw64: all
 
 clean:
-	rm -rf $(OBJDIR) $(TARGET) unpackmp2.exe $(TCAM2) $(LPQ8) $(LPQ9)
+	rm -rf $(OBJDIR) $(TARGET) unpackmp2.exe $(TCAM2) lpaq8
 
 dist: clean
 	tar czf unpackmp2-src.tar.gz --transform 's,^,unpackmp2/,' \

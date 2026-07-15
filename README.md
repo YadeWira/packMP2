@@ -1,12 +1,16 @@
-# unpackmp2
+# unpackmp2 + TCAM2
 
-Lossless transformation of MPEG Audio Layer II (MP2) data.
+Lossless transformation + compression for MPEG Audio Layer II (MP2).
 
-Unpacks MP2 frames into a structured intermediate format (`um2`) — more
-compressible with general-purpose compressors — and repacks back to MP2,
-bit-identical for the audio payload.
+**unpackmp2**: Reorders MP2 frames into structured um2 format — more
+compressible with general-purpose compressors. Roundtrip is byte-exact
+for the audio payload (v1.2 preserves ID3 tags, padding, etc.).
 
-Copyright (C) 2009 Michael Henke — GPLv3.
+**TCAM2**: Domain-optimized um2 compressor. Uses zstd with a trained
+dictionary for fast, high-ratio compression.
+
+Copyright (C) 2009-2010 Michael Henke (unpackmp2) — GPLv3.
+Copyright (C) 2026 Tovy (TCAM2) — GPLv3.
 
 ## How it works
 
@@ -103,3 +107,54 @@ The original `unpackmp2` uses code/ideas from:
 - libtwolame by TwoLAME Authors
 
 lpaq8 compressor (C) 2007 Matt Mahoney, Alexander Ratushnyak.
+
+## TCAM2 — Tovy Compresor de Audio MP2
+
+Domain-optimized compressor for um2 files. Uses zstd level 1 with a
+pre-trained 110KB dictionary for fast, high-ratio compression.
+
+### Usage
+
+```
+# Compress (pipe-friendly)
+unpackmp2 u < input.mp2 | tcam2 c > output.tcam2
+
+# Decompress
+tcam2 d < input.tcam2 | unpackmp2 p > output.mp2
+
+# Or with files
+tcam2 c input.um2 output.tcam2
+tcam2 d input.tcam2 output.um2
+```
+
+### Benchmarks (example.mp2, 691 KB, 160kbps stereo)
+
+| Method | Compressed | Ratio | Encode | Decode |
+|--------|-----------|-------|--------|--------|
+| lpaq8 5 via um2 | 561,496 | 81.2% | 1.36s | 1.84s |
+| **TCAM2 (dict+zstd)** | **586,846** | **84.9%** | **0.010s** | **0.007s** |
+| zstd -1 via um2 | 641,658 | 92.8% | 0.014s | 0.009s |
+| gzip -6 via um2 | 655,177 | 94.8% | 0.29s | 0.009s |
+
+TCAM2 is **131x faster** than lpaq8 at only 3.7 points worse ratio.
+All 13 test samples pass byte-exact roundtrip.
+
+### Project structure
+
+```
+src/
+├── unpackmp2.h   Types, constants, declarations
+├── globals.c      MPEG tables, global frame buffer
+├── bitio.c        Bit-level I/O (fbgetbits/fbputbits)
+├── frame.c        Frame header parsing, CRC-16
+├── pack.c         Read um2, repack to MP2
+├── unpack.c       Decompose MP2 frames, write um2
+├── main.c         unpackmp2 entry point
+├── tcam2.h        TCAM2 API
+├── tcam2.c        TCAM2 CLI entry point
+├── tcam2_enc.c    TCAM2 encoder (zstd + dictionary)
+├── tcam2_dec.c    TCAM2 decoder (zstd + dictionary)
+└── tcam2_dict.h   Trained zstd dictionary (110 KB)
+tools/             Windows .cmd helper scripts
+lpaq8_stdinout/    Modified lpaq8 compressor (stdin/stdout)
+```
