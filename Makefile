@@ -4,6 +4,7 @@
 
 CC      ?= gcc
 CXX     ?= g++
+AR      ?= ar
 CFLAGS  ?= -Wall -O3 -march=native -fomit-frame-pointer -s -I$(LIBDIR) -Ivendor/zstd -Ivendor/zstd/common -Ivendor/zstd/compress -Ivendor/zstd/decompress -Ivendor/zpaq -DXXH_NAMESPACE=ZSTD_ -DZSTD_LEGACY_SUPPORT=0 -DDYNAMIC_BMI2=0 -DZSTD_DISABLE_ASM
 CXXFLAGS ?= -Wall -O3 -march=native -Ivendor/zpaq
 LDFLAGS ?=
@@ -37,12 +38,20 @@ MAIN_OBJ  = $(OBJDIR)/main.o
 TARGET    = packmp2
 ALL_OBJ   = $(MAIN_OBJ) $(LIB_OBJ) $(TCAM2_OBJ) $(ZSTD_OBJ) $(ZPAQ_OBJ)
 
-.PHONY: all clean dist mingw mingw64 lite zpaq-fast
+.PHONY: all lib clean dist mingw mingw64 mingw-lib mingw64-lib lite zpaq-fast
 
 all: $(TARGET)
 
 $(TARGET): $(ALL_OBJ)
 	$(CXX) $(ALL_OBJ) $(LDFLAGS) -lm -lpthread -o $@
+
+# Static library for external consumers (e.g. packMP3).
+# Produces libpackmp2.a — link with: -L<dir> -lpackmp2 -lstdc++ -lpthread
+# Public header: src/lib/packmp2.h
+LIBOBJ = $(LIB_OBJ) $(TCAM2_OBJ) $(ZSTD_OBJ) $(ZPAQ_OBJ)
+lib: $(LIBOBJ)
+	$(AR) rcs libpackmp2.a $(LIBOBJ)
+	@echo "  libpackmp2.a ready ($(words $(LIBOBJ)) objects)"
 
 # Lite build objects (defined globally so prerequisites can see them)
 LITE_OBJ = $(MAIN_OBJ) $(LIB_OBJ) $(OBJDIR)/lite_stubs.o
@@ -81,6 +90,15 @@ mingw:
 
 mingw64:
 	$(MAKE) clean >/dev/null && $(MAKE) CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ TARGET=packmp2.exe LDFLAGS="-static -lpthread" all
+
+# Cross-compiled static library for Windows consumers (e.g. packMP3)
+mingw-lib:
+	$(MAKE) clean >/dev/null && $(MAKE) CC=i686-w64-mingw32-gcc CXX=i686-w64-mingw32-g++ AR=i686-w64-mingw32-ar lib
+	@echo "  -> libpackmp2.a (win32)"
+
+mingw64-lib:
+	$(MAKE) clean >/dev/null && $(MAKE) CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ AR=x86_64-w64-mingw32-ar lib
+	@echo "  -> libpackmp2.a (win64)"
 
 clean:
 	rm -rf $(OBJDIR) packmp2 packmp2.exe zpaq-fast

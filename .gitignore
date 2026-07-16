@@ -3,6 +3,9 @@ build/
 packmp2
 packmp2.exe
 *.o
+*.a
+*.dll
+*.so
 
 # IDE
 .vscode/
