@@ -19,18 +19,23 @@ extern "C" {
 int zpaq_compress(const unsigned char *in, size_t in_size,
                   unsigned char **out, size_t *out_size, int level) {
     if (level < 1) level = 1; if (level > 5) level = 5;
-    /* Custom-tuned methods for um2 data — faster than built-in expansion.
-       Levels 1-2: built-in LZ77 (fast, good for barely-compressible data).
-       Level 3: BWT+mix (574k, 0.41s) — beats old built-in 3 in ratio+speed.
-       Level 4: BWT+1ISSE+mix (570k, 0.46s) — near old level 4 ratio at 2x speed.
-       Level 5: built-in full CM (562k, 2.9s) — best ratio, matches lpaq8. */
+    /* Custom-tuned methods for um2 data (benchmarked on 19-file corpus, Jul 2026).
+       Key insight: c256 context + sparse models + multi-mixer beat built-in CM
+       at lower cost. MATCH helps but is expensive; SSE adds ~2KB savings at +350ms.
+       Level 1: built-in LZ77 fast (store if barely compressible).
+       Level 2: built-in LZ77 with longer search.
+       Level 3: BWT+1ISSE+mix (574k, 323ms) — unbeatable speed, 83.1% ratio.
+       Level 4: BWT+c256+2ISSE+mix (566k, 462ms) — +27ms for +0.6% vs old lvl4.
+       Level 5: BWT+c256+2ISSE+MATCH+sparse+mm16+SSE (562k, 2365ms) — matches
+                lpaq8 at 17% faster than built-in CM. */
     static const char *methods[] = {
         "0",              /* 0: store (unused) */
         "1",              /* 1: fast LZ77 */
         "2",              /* 2: LZ77 longer search */
-        "x6,0ci1m",       /* 3: BWT+mix — fast + good ratio */
-        "x6,0ci1,1m",     /* 4: BWT+1ISSE+mix — sweet spot */
-        "5",              /* 5: built-in full CM — best ratio */
+        "x6,0ci1m",       /* 3: BWT+1ISSE+mix — fast + good ratio */
+        "x6,0c256ci1,1m", /* 4: BWT+c256+2ISSE+mix — best speed/ratio */
+        /* 5: BWT+c256+2ISSE+MATCH+sparse+mm16+SSE — matches lpaq8 */
+        "x6,0c256ci1,1,2ac0,2,0,255i1c0,3,0,0,255i1c0,4,0,0,0,255i1mm16ts19t0",
     };
     return zpaq_compress_method(in, in_size, out, out_size, methods[level]);
 }

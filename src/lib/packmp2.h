@@ -32,12 +32,15 @@ extern "C" {
 
 /* ---- compression levels (controls method complexity, higher = better ratio) ----
    zstd: level maps directly to zstd level clamped 1..6 (dict does heavy lifting).
-   zpaq: 1=LZ77-fast  2=LZ77-longer  3=BWT+mix  4=BWT+ISSE+mix  5=full-CM. */
-#define PACKMP2_LEVEL_STORE   0   /* store verbatim (no compression)              */
-#define PACKMP2_LEVEL_FAST    1   /* zstd level 1  /  zpaq LZ77-fast              */
-#define PACKMP2_LEVEL_DEFAULT 3   /* zstd level 1  /  zpaq BWT+mix   (best speed) */
-#define PACKMP2_LEVEL_GOOD    4   /* zstd level 3  /  zpaq BWT+ISSE+mix (balance) */
-#define PACKMP2_LEVEL_BEST    5   /* zstd level 6  /  zpaq full CM      (max)     */
+   zpaq v0.5: custom-tuned ZPAQL methods optimized for um2 data.
+     1=LZ77-fast  2=LZ77-longer  3=BWT+1ISSE+mix (fastest)
+     4=BWT+c256+2ISSE+mix (best speed/ratio)
+     5=BWT+c256+2ISSE+MATCH+sparse+mm16+SSE (matches lpaq8, 17% faster than built-in CM) */
+#define PACKMP2_LEVEL_STORE   0   /* store verbatim (no compression)                     */
+#define PACKMP2_LEVEL_FAST    1   /* zstd level 1  /  zpaq LZ77-fast                     */
+#define PACKMP2_LEVEL_DEFAULT 3   /* zstd level 1  /  zpaq BWT+ISSE+mix     (best speed) */
+#define PACKMP2_LEVEL_GOOD    4   /* zstd level 3  /  zpaq BWT+c256+ISSE+mix (balance)   */
+#define PACKMP2_LEVEL_BEST    5   /* zstd level 6  /  zpaq full custom CM    (max)       */
 
 /* ---- never-expand policy ---- */
 #define PACKMP2_NEVER_EXPAND 1   /* if compressed >= original, store verbatim */
