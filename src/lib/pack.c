@@ -121,7 +121,7 @@ void packFrame_L1(unpackmp2_t* u) {
 /* Read um2 v2 from infile, repack to mp2, write to outfile.
    Preserves non-audio data (preamble, filler, trailer) for byte-exact roundtrip. */
 int pack_opt(FILE* infile, FILE* outfile, int opt) {
-    unpackmp2_t *um2_array = malloc(MAX_FRAMES_PER_BLOCK * sizeof(unpackmp2_t));
+    unpackmp2_t *um2_array = calloc(MAX_FRAMES_PER_BLOCK, sizeof(unpackmp2_t));
     if (!um2_array) return 1;
 
     /* check um2 v2 file header */

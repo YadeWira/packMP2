@@ -133,7 +133,7 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
     U32 framecount = 0;
     U32 skipped = 0;
 
-    unpackmp2_t *um2_array = malloc(MAX_FRAMES_PER_BLOCK * sizeof(unpackmp2_t));
+    unpackmp2_t *um2_array = calloc(MAX_FRAMES_PER_BLOCK, sizeof(unpackmp2_t));
     unsigned char *skipped_data = malloc(MAX_SYNC_SKIP_BYTES);
     if (!um2_array || !skipped_data) {
         free(um2_array); free(skipped_data);
