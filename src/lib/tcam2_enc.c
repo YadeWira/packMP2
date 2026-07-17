@@ -35,6 +35,7 @@ int tcam2_compress_dict(FILE *in, FILE *out, int level,
     if (stored) fwrite(data,1,sz,out);
     else        fwrite(zout,1,csz,out);
     free(zout);free(data);
+    fflush(out);
     if(!tcam2_quiet) fprintf(stderr,"TCAM2: %ld -> %ld bytes (%.1f%%)%s\n",sz,ftell(out),
         100.0*ftell(out)/(sz?sz:1), stored?" [stored]":"");
     return 0;
