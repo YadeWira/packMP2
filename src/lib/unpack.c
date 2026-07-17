@@ -6,11 +6,9 @@
 #include "unpackmp2.h"
 
 /* Buffer for bytes skipped during frame sync (max 5 MB).
-   Stores non-audio data found before/after/between MP2 frames. */
+   Stores non-audio data found before/after/between MP2 frames.
+   Per-call heap allocation (v0.6) — no longer a static buffer. */
 #define MAX_SYNC_SKIP_BYTES  (5*1024*1024)
-/* NOTE: 5MB file-scope static. Not thread-safe — concurrent unpack()
-   calls share this buffer. Planned per-call heap alloc in v0.6. */
-static unsigned char SKIPPED_DATA[MAX_SYNC_SKIP_BYTES];
 
 /* Decompose one packed MP2 frame from the frame buffer into metadata arrays. */
 void unpackFrame(unpackmp2_t* u) {
@@ -86,6 +84,13 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
     U32 framecount = 0;
     U32 skipped = 0;
 
+    unpackmp2_t *um2_array = malloc(MAX_FRAMES_PER_BLOCK * sizeof(unpackmp2_t));
+    unsigned char *skipped_data = malloc(MAX_SYNC_SKIP_BYTES);
+    if (!um2_array || !skipped_data) {
+        free(um2_array); free(skipped_data);
+        return 1;
+    }
+
     for (;;) {
         int framesInBlock = 0;
 
@@ -99,6 +104,7 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
             /* check um2 file header (input is already unpacked) */
             if ((framecount==0) && (b0=='u') && (b1=='m') && (b2=='2')) {
                 fprintf(stderr, "NOT AN MP2 FILE. (found um2 file header)\n");
+                free(um2_array); free(skipped_data);
                 return 4;
             }
 
@@ -110,11 +116,12 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
                     if (framecount == 0) {
                         fprintf(stderr, "NOT AN MP2 FILE. (sync frame header, skipped %d bytes, EOF.)\n",
                                 skipped);
+                        free(um2_array); free(skipped_data);
                         return 4;
                     } else {
-                        if (b0 != EOF) { SKIPPED_DATA[skipped++] = b0; }
-                        if (b1 != EOF) { SKIPPED_DATA[skipped++] = b1; }
-                        if (b2 != EOF) { SKIPPED_DATA[skipped++] = b2; }
+                        if (b0 != EOF) { skipped_data[skipped++] = b0; }
+                        if (b1 != EOF) { skipped_data[skipped++] = b1; }
+                        if (b2 != EOF) { skipped_data[skipped++] = b2; }
                         break;
                     }
                 } else {
@@ -126,7 +133,7 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
                     ) {
                         break;      /* OK - frame sync! */
                     } else {
-                        SKIPPED_DATA[skipped++] = b0;   /* no frame sync */
+                        skipped_data[skipped++] = b0;   /* no frame sync */
                         b0 = b1;
                         b1 = b2;
                         b2 = b3;
@@ -137,6 +144,7 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
                 if (framecount == 0) {
                     fprintf(stderr, "NOT AN MP2 FILE. (sync frame header, skipped %d bytes, no sync.)\n",
                             skipped);
+                    free(um2_array); free(skipped_data);
                     return 4;
                 } else {
                     break;    /* lost sync */
@@ -149,7 +157,7 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
                 break;
             }
 
-            unpackmp2_t* u = &UM2_ARRAY[framesInBlock];
+            unpackmp2_t* u = &um2_array[framesInBlock];
             u->fb[0] = b0;
             u->fb[1] = b1;
             u->fb[2] = b2;
@@ -173,7 +181,7 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
                 /* write non-audio data before first frame */
                 putc(skipped>>24, outfile); putc(skipped>>16, outfile);
                 putc(skipped>>8,  outfile); putc(skipped,     outfile);
-                { U32 i; for (i = 0; i < skipped; ++i) { putc(SKIPPED_DATA[i], outfile); } }
+                { U32 i; for (i = 0; i < skipped; ++i) { putc(skipped_data[i], outfile); } }
             }
             ++framecount;
         }
@@ -187,7 +195,7 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
         /* write bit allocations */
         for (i = 0; i < MAX_SBLIMIT; i++) {
             for (frm = 0; frm < framesInBlock; frm++) {
-                const unpackmp2_t* u = &UM2_ARRAY[frm];
+                const unpackmp2_t* u = &um2_array[frm];
                 if (i < u->sbLimit) {
                     if (i < u->jsBound) {
                         q = (u->bitalloc2BITS[1][i]<<4) | u->bitalloc2BITS[0][i];
@@ -211,7 +219,7 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
             int pack = 0, shift = 0;
             for (i = 0; i < MAX_SBLIMIT; i++) {
                 for (frm = 0; frm < framesInBlock; frm++) {
-                    unpackmp2_t* u = &UM2_ARRAY[frm];
+                    unpackmp2_t* u = &um2_array[frm];
                     if (i < u->sbLimit) {
                         for (j = 0; j < u->numChannels; j++) {
                             if (u->bitalloc2[j][i] != NULL) {
@@ -227,7 +235,7 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
         } else {
             for (i = 0; i < MAX_SBLIMIT; i++) {
                 for (frm = 0; frm < framesInBlock; frm++) {
-                    unpackmp2_t* u = &UM2_ARRAY[frm];
+                    unpackmp2_t* u = &um2_array[frm];
                     if (i < u->sbLimit) {
                         for (j = 0; j < u->numChannels; j++) {
                             if (u->bitalloc2[j][i] != NULL) {
@@ -245,7 +253,7 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
             memset(prev_scale, 0, sizeof(prev_scale));
             for (i = 0; i < MAX_SBLIMIT; i++) {
                 for (frm = 0; frm < framesInBlock; frm++) {
-                    const unpackmp2_t* u = &UM2_ARRAY[frm];
+                    const unpackmp2_t* u = &um2_array[frm];
                     if (i < u->sbLimit) {
                         for (j = 0; j < u->numChannels; j++) {
                             if (u->bitalloc2[j][i] != NULL) {
@@ -280,7 +288,7 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
         for (bits = 3; bits <= 16; bits++) {
             for (i = 0; i < MAX_SBLIMIT; i++) {
                 for (frm = 0; frm < framesInBlock; frm++) {
-                    unpackmp2_t* u = &UM2_ARRAY[frm];
+                    unpackmp2_t* u = &um2_array[frm];
                     if (i < u->sbLimit) {
                         for (j = 0; j < ((i < u->jsBound) ? 2 : 1); j++) {
                             const sballoc_t* bitalloc2 = u->bitalloc2[j][i];
@@ -310,12 +318,13 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
 
         /* write non-audio "filler" data from inside the mp2 frames */
         for (frm = 0; frm < framesInBlock; frm++) {
-            const unpackmp2_t* u = &UM2_ARRAY[frm];
+            const unpackmp2_t* u = &um2_array[frm];
             i = u->hdrLength - (u->fbpos>>3);
             if (i < 0) {
                 fprintf(stderr, "error: too many bits read from frame "
                         "(length=%d, bitpos=%d)\ncorrupted mp2 file or bug?\n",
                         u->hdrLength, u->fbpos);
+                free(um2_array); free(skipped_data);
                 return 4;
             } else if (i > 0) {
                 putc(u->fb[u->fbpos>>3] & ((1<<(8-(u->fbpos&7)))-1), outfile);
@@ -327,6 +336,7 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
         if(!unpackmp2_quiet) fprintf(stderr, "unpacked mp2 frames: %d\n", framecount);
         if (ferror(outfile)) {
             perror("write unpacked frame");
+            free(um2_array); free(skipped_data);
             return 4;
         }
 
@@ -337,11 +347,13 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
             /* write non-audio data after last frame */
             putc(skipped>>24, outfile); putc(skipped>>16, outfile);
             putc(skipped>>8,  outfile); putc(skipped,     outfile);
-            { U32 i; for (i = 0; i < skipped; ++i) { putc(SKIPPED_DATA[i], outfile); } }
+            { U32 i; for (i = 0; i < skipped; ++i) { putc(skipped_data[i], outfile); } }
+            free(um2_array); free(skipped_data);
             return 0;
         }
     }
     /* NOTREACHED */
+    free(um2_array); free(skipped_data);
     return 0;
 }
 

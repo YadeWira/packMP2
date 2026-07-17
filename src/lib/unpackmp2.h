@@ -87,10 +87,8 @@ typedef struct {
 
 /* MAX_FRAMES_PER_BLOCK must be < 65536 (16 bits) */
 #define MAX_FRAMES_PER_BLOCK  4096
-/* NOTE: UM2_ARRAY is a shared global (~600KB). Not thread-safe —
-   concurrent unpack()/pack() calls will corrupt each other's data.
-   Planned per-call heap allocation in v0.6. */
-extern unpackmp2_t UM2_ARRAY[MAX_FRAMES_PER_BLOCK];
+/* Buffer is now per-call heap-allocated in unpack_opt()/pack_opt().
+   Functions are reentrant for independent FILE* handles (v0.6). */
 
 /* bitio.c */
 U32  fbgetbits(unpackmp2_t* u, int n);

@@ -5,12 +5,10 @@
 
 #include "unpackmp2.h"
 
-/* Global frame buffer array */
-unpackmp2_t UM2_ARRAY[MAX_FRAMES_PER_BLOCK];
-
 /* Suppress informational stderr output from unpack/pack.
    NOTE: not thread-safe — shared across threads. Cosmetic only
-   (affects stderr output, never data correctness). */
+   (affects stderr output, never data correctness).
+   Unaffected by v0.6 heap refactor (harmless stderr interleaving). */
 int unpackmp2_quiet = 0;
 
 /* MPEG frame header lookup tables */
