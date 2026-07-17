@@ -338,27 +338,52 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
         }
 
         /* write samples */
-        for (bits = 3; bits <= 16; bits++) {
-            for (i = 0; i < MAX_SBLIMIT; i++) {
-                for (frm = 0; frm < framesInBlock; frm++) {
-                    unpackmp2_t* u = &um2_array[frm];
-                    if (i < u->sbLimit) {
-                        for (j = 0; j < ((i < u->jsBound) ? 2 : 1); j++) {
-                            const sballoc_t* bitalloc2 = u->bitalloc2[j][i];
-                            if ((bitalloc2 != NULL) && (bitalloc2->bits == bits)) {
-                                for (q = 0; q < 36; q += 3) {
-                                    putc(u->sampleBITS[j][q][i], outfile);
-                                    if (bitalloc2->bits > 8) {
-                                        putc(u->sampleBITS[j][q][i] >> 8, outfile);
-                                    }
-                                    if (bitalloc2->steps == 0) {
-                                        putc(u->sampleBITS[j][q+1][i], outfile);
-                                        if (bitalloc2->bits > 8) {
-                                            putc(u->sampleBITS[j][q+1][i] >> 8, outfile);
+        if (framesInBlock > 0 && um2_array[0].hdrLayer == 1) {
+            /* Layer I: 12 samples/subband, no grouping, bits=1..15 */
+            for (bits = 1; bits <= 15; bits++) {
+                for (i = 0; i < MAX_SBLIMIT; i++) {
+                    for (frm = 0; frm < framesInBlock; frm++) {
+                        unpackmp2_t* u = &um2_array[frm];
+                        if (i < u->sbLimit) {
+                            for (j = 0; j < ((i < u->jsBound) ? 2 : 1); j++) {
+                                if (u->bitalloc2[j][i] != NULL &&
+                                    u->bitalloc2BITS[j][i] + 1 == bits) {
+                                    for (q = 0; q < 12; q++) {
+                                        putc(u->sampleBITS[j][q][i], outfile);
+                                        if (bits > 8) {
+                                            putc(u->sampleBITS[j][q][i] >> 8, outfile);
                                         }
-                                        putc(u->sampleBITS[j][q+2][i], outfile);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            /* Layer II: 36 samples/subband, granule groups, bits=3..16 */
+            for (bits = 3; bits <= 16; bits++) {
+                for (i = 0; i < MAX_SBLIMIT; i++) {
+                    for (frm = 0; frm < framesInBlock; frm++) {
+                        unpackmp2_t* u = &um2_array[frm];
+                        if (i < u->sbLimit) {
+                            for (j = 0; j < ((i < u->jsBound) ? 2 : 1); j++) {
+                                const sballoc_t* bitalloc2 = u->bitalloc2[j][i];
+                                if ((bitalloc2 != NULL) && (bitalloc2->bits == bits)) {
+                                    for (q = 0; q < 36; q += 3) {
+                                        putc(u->sampleBITS[j][q][i], outfile);
                                         if (bitalloc2->bits > 8) {
-                                            putc(u->sampleBITS[j][q+2][i] >> 8, outfile);
+                                            putc(u->sampleBITS[j][q][i] >> 8, outfile);
+                                        }
+                                        if (bitalloc2->steps == 0) {
+                                            putc(u->sampleBITS[j][q+1][i], outfile);
+                                            if (bitalloc2->bits > 8) {
+                                                putc(u->sampleBITS[j][q+1][i] >> 8, outfile);
+                                            }
+                                            putc(u->sampleBITS[j][q+2][i], outfile);
+                                            if (bitalloc2->bits > 8) {
+                                                putc(u->sampleBITS[j][q+2][i] >> 8, outfile);
+                                            }
                                         }
                                     }
                                 }

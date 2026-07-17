@@ -199,15 +199,26 @@ int pack_opt(FILE* infile, FILE* outfile, int opt) {
                     framecount++;
                 }
                 if (i < u->sbLimit) {
-                    const sballoc_t*** alloc = ALLOCTABS[u->allocTabNum >> 1];
                     int b = getc(infile);
                     if (b == EOF) break;
-                    u->bitalloc2BITS[0][i] = b & 0x0F;
-                    u->bitalloc2[0][i] = alloc[i][b & 0x0F];
-                    if (i < u->jsBound) {
-                        u->bitalloc2BITS[1][i] = b >> 4;
-                        u->bitalloc2[1][i] = alloc[i][b >> 4];
-                    } else { u->bitalloc2[1][i] = u->bitalloc2[0][i]; }
+                    if (u->hdrLayer == 1) {
+                        /* Layer I: raw 4-bit bitalloc values (0-14).
+                           ALLOC[0]={3,5} used as dummy non-NULL pointer for bitalloc>0. */
+                        u->bitalloc2BITS[0][i] = b & 0x0F;
+                        u->bitalloc2[0][i] = (b & 0x0F) ? (sballoc_t*)&ALLOC[b & 0x0F] : NULL;
+                        if (i < u->jsBound) {
+                            u->bitalloc2BITS[1][i] = b >> 4;
+                            u->bitalloc2[1][i] = (b >> 4) ? (sballoc_t*)&ALLOC[b >> 4] : NULL;
+                        } else { u->bitalloc2[1][i] = u->bitalloc2[0][i]; }
+                    } else {
+                        const sballoc_t*** alloc = ALLOCTABS[u->allocTabNum >> 1];
+                        u->bitalloc2BITS[0][i] = b & 0x0F;
+                        u->bitalloc2[0][i] = alloc[i][b & 0x0F];
+                        if (i < u->jsBound) {
+                            u->bitalloc2BITS[1][i] = b >> 4;
+                            u->bitalloc2[1][i] = alloc[i][b >> 4];
+                        } else { u->bitalloc2[1][i] = u->bitalloc2[0][i]; }
+                    }
                 }
             }
         }
@@ -296,27 +307,52 @@ int pack_opt(FILE* infile, FILE* outfile, int opt) {
         }
 
         /* read samples */
-        for (bits = 3; bits <= 16; bits++) {
-            for (i = 0; i < MAX_SBLIMIT; i++) {
-                for (frm = 0; frm < framesInBlock; frm++) {
-                    unpackmp2_t* u = &um2_array[frm];
-                    if (i < u->sbLimit) {
-                        for (j = 0; j < ((i < u->jsBound) ? 2 : 1); j++) {
-                            const sballoc_t* bitalloc2 = u->bitalloc2[j][i];
-                            if ((bitalloc2 != NULL) && (bitalloc2->bits == bits)) {
-                                for (q = 0; q < 36; q += 3) {
-                                    u->sampleBITS[j][q][i] = getc(infile);
-                                    if (bitalloc2->bits > 8) {
-                                        u->sampleBITS[j][q][i] |= getc(infile)<<8;
-                                    }
-                                    if (bitalloc2->steps == 0) {
-                                        u->sampleBITS[j][q+1][i] = getc(infile);
-                                        if (bitalloc2->bits > 8) {
-                                            u->sampleBITS[j][q+1][i] |= getc(infile)<<8;
+        if (framesInBlock > 0 && um2_array[0].hdrLayer == 1) {
+            /* Layer I: 12 samples/subband, no grouping, bits=1..15 */
+            for (bits = 1; bits <= 15; bits++) {
+                for (i = 0; i < MAX_SBLIMIT; i++) {
+                    for (frm = 0; frm < framesInBlock; frm++) {
+                        unpackmp2_t* u = &um2_array[frm];
+                        if (i < u->sbLimit) {
+                            for (j = 0; j < ((i < u->jsBound) ? 2 : 1); j++) {
+                                if (u->bitalloc2[j][i] != NULL &&
+                                    u->bitalloc2BITS[j][i] + 1 == bits) {
+                                    for (q = 0; q < 12; q++) {
+                                        u->sampleBITS[j][q][i] = getc(infile);
+                                        if (bits > 8) {
+                                            u->sampleBITS[j][q][i] |= getc(infile)<<8;
                                         }
-                                        u->sampleBITS[j][q+2][i] = getc(infile);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            /* Layer II: 36 samples/subband, granule groups, bits=3..16 */
+            for (bits = 3; bits <= 16; bits++) {
+                for (i = 0; i < MAX_SBLIMIT; i++) {
+                    for (frm = 0; frm < framesInBlock; frm++) {
+                        unpackmp2_t* u = &um2_array[frm];
+                        if (i < u->sbLimit) {
+                            for (j = 0; j < ((i < u->jsBound) ? 2 : 1); j++) {
+                                const sballoc_t* bitalloc2 = u->bitalloc2[j][i];
+                                if ((bitalloc2 != NULL) && (bitalloc2->bits == bits)) {
+                                    for (q = 0; q < 36; q += 3) {
+                                        u->sampleBITS[j][q][i] = getc(infile);
                                         if (bitalloc2->bits > 8) {
-                                            u->sampleBITS[j][q+2][i] |= getc(infile)<<8;
+                                            u->sampleBITS[j][q][i] |= getc(infile)<<8;
+                                        }
+                                        if (bitalloc2->steps == 0) {
+                                            u->sampleBITS[j][q+1][i] = getc(infile);
+                                            if (bitalloc2->bits > 8) {
+                                                u->sampleBITS[j][q+1][i] |= getc(infile)<<8;
+                                            }
+                                            u->sampleBITS[j][q+2][i] = getc(infile);
+                                            if (bitalloc2->bits > 8) {
+                                                u->sampleBITS[j][q+2][i] |= getc(infile)<<8;
+                                            }
                                         }
                                     }
                                 }
