@@ -250,5 +250,5 @@ size_t packmp2_query_original_size(const unsigned char *in, size_t in_len,
 }
 
 const char *packmp2_version(void) {
-    return "0.5.0";
+    return "0.7.0";
 }

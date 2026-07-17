@@ -1,5 +1,5 @@
-/*  packMP2 — MPEG Audio Layer II lossless transform + compression
-    Unified CLI with switches for testing. v0.4
+/*  packMP2 — MPEG Audio Layer I/II lossless transform + compression
+    Unified CLI with switches for testing. v0.7
     Copyright (C) 2009-2010 Michael Henke, 2026 Tovy. GPLv3.
 */
 
@@ -19,7 +19,7 @@
 
 #include "zpaq_c.h"
 
-#define VERSION "0.5"
+#define VERSION "0.7"
 
 /* Forward declarations */
 extern int unpack(FILE *in, FILE *out);
@@ -36,7 +36,7 @@ extern int tcam2_quiet;
 
 static void print_help(void) {
     fprintf(stderr,
-        "packMP2 v" VERSION " — MPEG Audio Layer II lossless transform + compression\n"
+        "packMP2 v" VERSION " — MPEG Audio Layer I/II lossless transform + compression\n"
         "Sub-project of packMP3. https://github.com/YadeWira/packMP2\n"
         "\n"
         "  packmp2 <command> [options]\n"

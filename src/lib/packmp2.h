@@ -20,7 +20,7 @@ extern "C" {
 #endif
 
 #define PACKMP2_VERSION_MAJOR 0
-#define PACKMP2_VERSION_MINOR 6
+#define PACKMP2_VERSION_MINOR 7
 #define PACKMP2_VERSION_PATCH 0
 
 /* ---- compression methods ---- */
