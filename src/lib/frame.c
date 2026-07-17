@@ -14,8 +14,10 @@ void extractFrameHeaderInfo(unpackmp2_t* u) {
     if (u->hdrLayer == 1) {
         /* Layer I: different bitrate table + frame length formula */
         u->hdrBitrate = FRMHDR_BITRATE_L1[(u->hdrLsf==0 ? 0 : 1)][(u->fb[2] & 0xF0)>>4];
-        /* Layer I: 384 samples/frame, slot=4B. 48000 = 12*1000*4 */
-        u->hdrLength = 48000 * u->hdrBitrate / u->hdrFrequency + (((u->fb[2] & 0x02)>>1) * 4);
+        /* Layer I: 384 samples/frame, slot=4B.
+           ISO formula: N = 12*bitrate*1000/freq (slots), bytes = (N+pad)*4.
+           Compute as ((12000*br)/freq + pad) * 4 to preserve integer truncation. */
+        u->hdrLength = ((12000 * u->hdrBitrate) / u->hdrFrequency + ((u->fb[2] & 0x02)>>1)) * 4;
     } else {
         u->hdrBitrate = FRMHDR_BITRATE[(u->hdrLsf==0 ? 0 : 1)][(u->fb[2] & 0xF0)>>4];
         /* Layer II: 1152 samples/frame, slot=1B. 144000 = 36*1000*1 */
