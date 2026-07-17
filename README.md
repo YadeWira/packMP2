@@ -1,34 +1,33 @@
-# packMP2 Lab
+# packMP2
 
 Lossless MPEG Audio Layer II (MP2) transformation + compression.
+Layer II only — Layer I (MP1) files are rejected cleanly.
 
 **packMP2** is a sub-project of **packMP3**. It provides the MP2 layer
 codec: frame reordering (unpackmp2) + optimized compression (TCAM2).
-It will be integrated as a submodule/library in packMP3.
+Integrated as a submodule/library in packMP3.
 
-Prebuilt binaries are in [GitHub Releases](https://github.com/YadeWira/packMP2/releases)
-for Linux x64, Windows x64, and Windows x86. All include full TCAM2 support.
-Binaries in `reference/` are the original Windows builds (2009-2010) kept
-for historical reference.
+Prebuilt binaries and static libs are in [GitHub Releases](https://github.com/YadeWira/packMP2/releases)
+for Linux x64, Windows x64, and Windows x86.
 
 **unpackmp2**: Reorders MP2 frames into the structured `um2` format —
 more compressible with general-purpose compressors. Roundtrip is
-byte-exact for the audio payload (v1.2 preserves ID3 tags, padding, etc.).
+byte-exact for the complete file (v1.2 preserves ID3 tags, padding, etc.).
 
 **TCAM2** (Tovy Compresor de Audio MP2): Domain-optimized compressor for
-um2 files. Uses zstd level 1 with a 110 KB dictionary trained across
-multiple MP2 samples. 131x faster than lpaq8 with only a 3.7 point
-ratio gap.
+um2 files. Two backends:
+- **zstd + trained dict** (110 KB, default): ~90% ratio at ~0.01s — 100× faster than lpaq8
+- **zpaq context-mixing**: custom-tuned ZPAQL methods, matches lpaq8 ratio at 17% faster
 
 Copyright (C) 2009-2010 Michael Henke (unpackmp2) — GPLv3.
-Copyright (C) 2026 Tovy (TCAM2) — GPLv3.
+Copyright (C) 2026 Tovy (TCAM2, zpaq tuning) — GPLv3.
 
 ## How it works
 
 ```
-mp2 ──[unpack]──> um2 ──[lpaq8 / 7z / ...]──> compressed
+mp2 ──[unpack]──> um2 ──[zpaq / zstd]──> compressed (TCAM2)
                     │
-                    └──[pack]──> mp2  (bit-identical audio)
+                    └──[pack]──> mp2  (byte-identical)
 ```
 
 `unpackmp2` decomposes each MP2 frame into its semantic fields (bit allocations,
@@ -36,21 +35,45 @@ scalefactors, samples) and serializes them grouped by type across frames within
 a block. This reordering exposes redundancy that generic compressors exploit,
 yielding 5–15% better ratios vs compressing the raw MP2 directly.
 
-Non-audio data (ID3 tags, RIFF headers) is preserved in v1.2 format.
-Roundtrip is byte-exact for the complete file.
+Non-audio data (ID3 tags, RIFF headers) is preserved. Roundtrip is byte-exact.
 
 ## Build
 
 ```sh
-make          # Full build (zero deps, vendored zstd) → ./packmp2
-make lite     # Unpack/pack only (just gcc+make)
-make mingw    # Windows 32-bit cross-compile (full TCAM2)
-make mingw64  # Windows 64-bit cross-compile (full TCAM2)
-make clean    # Remove build artifacts
+make              # Full build (zero deps, vendored zstd+zpaq) → ./packmp2
+make lib          # Static library (no CLI) → libpackmp2.a
+make lite         # Unpack/pack only (just gcc+make, no compression)
+make mingw        # Windows 32-bit cross-compile (full)
+make mingw64      # Windows 64-bit cross-compile (full)
+make mingw-lib    # Windows 32-bit static library
+make mingw64-lib  # Windows 64-bit static library
+make zpaq-fast    # Standalone zpaq bench tool (supports custom methods)
+make clean
 ```
 
-100% self-contained. `gcc` + `make` is all you need. zstd 1.5.7 is vendored
-in `vendor/zstd/`.
+100% self-contained. `gcc` + `g++` + `make` is all you need.
+zstd 1.5.7 vendored in `vendor/zstd/`, libzpaq 7.12 in `vendor/zpaq/`.
+
+## Library API (v0.5+)
+
+```c
+#include "packmp2.h"
+
+packmp2_opts opts = packmp2_opts_default();
+opts.method = PACKMP2_METHOD_ZPAQ;
+opts.level  = PACKMP2_LEVEL_BEST;  // 5 = matches lpaq8
+
+unsigned char *out; size_t out_len; char msg[256];
+packmp2_compress(mp2_data, mp2_len, &out, &out_len, &opts, msg);
+// out is malloc'd — caller frees with free()
+```
+
+Link: `-L<packMP2_dir> -lpackmp2 -lstdc++ -lpthread`
+
+**Thread-safe (v0.6+)**: fully reentrant, safe for concurrent calls. PackMP3
+measured 3.4× speedup with `-th8` after removing the mutex.
+
+Full header: `src/lib/packmp2.h`.
 
 ## Usage
 
@@ -65,24 +88,25 @@ Commands:
   x, pipe        mp2 -> um2 -> tcam2 -> um2 -> mp2
 
 Options:
-  -i, --input F   Read from file (default: stdin)
-  -o, --output F  Write to file (default: stdout)
-  -q, --quiet     Suppress progress messages
-  -l, --level N   zstd level 1-9 (default: 1)
-  -O, --optimized SCFSI packing + scalefactor delta
-  --zpaq N        Use zpaq context-mixing 1-5 (best ratio)
-  -b, --benchmark Report timing + ratio
-  -s, --stats     Show detailed statistics
-  --compare       Compress with/without dict, compare
-  --no-dict       Compress without dictionary
-  --dict FILE     Use external dictionary
-  --list FILE     Show file metadata (no processing)
-  --test-all DIR  Batch test all .mp2 files in directory
-  --csv           CSV output for scripting
-  --raw           c/d passthrough (testing)
-  --verify        Auto roundtrip verification (pipe mode)
-  -V, --version   Print version
-  -h, --help      This help
+  -i, --input F     Read from file (default: stdin)
+  -o, --output F    Write to file (default: stdout)
+  -q, --quiet       Suppress progress messages
+  -l, --level N     Compression level 1-9 (default: 1)
+  -O, --optimized   SCFSI packing + scalefactor delta
+  --zpaq N          Use zpaq context-mixing level 1-5 (best ratio)
+  --zpaq-method S   Raw ZPAQL method string (advanced)
+  -b, --benchmark   Report timing + ratio
+  -s, --stats       Show detailed statistics
+  --compare         Compress with/without dict, compare
+  --no-dict         Compress without dictionary
+  --dict FILE       Use external dictionary
+  --list FILE       Show file metadata
+  --test-all DIR    Batch test all .mp2 files in directory
+  --csv             CSV output for scripting
+  --raw             c/d passthrough (testing)
+  --verify          Auto roundtrip verification (pipe mode)
+  -V, --version     Print version
+  -h, --help        This help
 ```
 
 Full pipeline:
@@ -96,56 +120,73 @@ packmp2 x -i input.mp2 -o output.mp2 --verify -b
 
 ```
 src/
-├── main.c         Unified CLI
+├── main.c           Unified CLI
 └── lib/
+    ├── packmp2.h     Public C API header
+    ├── packmp2.c     Library implementation (mp2 ↔ compressed)
     ├── unpackmp2.h   Types, tables, declarations
-    ├── globals.c      MPEG constants, allocation tables
-    ├── bitio.c        Bit-level I/O (fbgetbits/fbputbits)
-    ├── frame.c        Frame header parsing, CRC-16
-    ├── pack.c         Read um2, repack to MP2 (+ packFrame)
-    ├── unpack.c       Decompose MP2, write um2
-    ├── tcam2.h        TCAM2 API
-    ├── tcam2_enc.c    TCAM2 encoder (zstd / zpaq)
-    ├── tcam2_dec.c    TCAM2 decoder
-    ├── tcam2_dict.h   Trained zstd dictionary (110 KB, 5 samples)
-    └── lite_stubs.c   Stubs for lite build (unpack/pack only)
-vendor/zstd/       Vendored zstd 1.5.7 (zero external deps)
-vendor/zpaq/       Vendored libzpaq 7.12 + C wrapper (zpaq_c)
-reference/         Legacy files (original sources, binaries, tools)
+    ├── globals.c     MPEG constants, allocation tables
+    ├── bitio.c       Bit-level I/O (fbgetbits/fbputbits)
+    ├── frame.c       Frame header parsing, CRC-16
+    ├── pack.c        Read um2, repack to MP2 (+ packFrame)
+    ├── unpack.c      Decompose MP2, write um2
+    ├── tcam2.h       TCAM2 API
+    ├── tcam2_enc.c   TCAM2 encoder (zstd / zpaq)
+    ├── tcam2_dec.c   TCAM2 decoder
+    ├── tcam2_dict.h  Trained zstd dictionary (110 KB)
+    └── lite_stubs.c  Stubs for lite build (unpack/pack only)
+vendor/
+├── zstd/            Vendored zstd 1.5.7
+└── zpaq/            libzpaq 7.12 + C wrapper (zpaq_c.h/cpp) + zpaq-fast
+reference/           Legacy files (original sources, binaries, tools)
 ```
 
-## Test results (from original README)
+## Benchmarks (example.mp2, 691 KB, 160 kbps stereo)
 
-`test1.mp2` (125.8 MB, 54m57s, 320 kbps, 48 kHz, stereo, DVB-S radio):
+### ZPAQ levels (v0.6 custom-tuned methods, compressing um2)
 
-| Pipeline              | Options         | Compressed size |
-|-----------------------|-----------------|-----------------|
-| unpackmp2 \| lpaq8     | 5               | 110.9 MB (84.0%) |
-| unpackmp2 \| 7z LZMA  | ultra           | 117.9 MB (89.4%) |
-| unpackmp2 \| 7z Bzip2 | ultra           | 119.1 MB (90.3%) |
-| unpackmp2 \| 7z PPMd  | ultra           | 120.6 MB (91.4%) |
-| lpaq8 (no unpack)     | 5               | 123.3 MB (93.5%) |
+| Level | Method | Compressed | Ratio | Time |
+|-------|--------|-----------|-------|------|
+| 3 | BWT+1ISSE+mix | 574,046 | 83.1% | 323ms |
+| 4 | BWT+c256+2ISSE+mix | 566,076 | 81.9% | 462ms |
+| 5 | BWT+c256+2ISSE+MATCH+sparse+mm16+SSE | 561,834 | **81.3%** | 2365ms |
+| lpaq8 -6 (ref) | — | ~561,500 | ~81.2% | — |
 
-## TCAM2 Benchmarks (example.mp2, 691 KB, 160kbps stereo)
+### Full pipeline (mp2 → TCAM2, 10-byte header included)
 
-| Method | Compressed | Ratio | Encode | Decode |
-|--------|-----------|-------|--------|--------|
-| lpaq8 5 via um2 | 561,496 | 81.2% | 1.36s | 1.84s |
-| **packmp2 c --zpaq 5** | **561,892** | **81.3%** | **2.86s** | **2.96s** |
-| **packmp2 c --zpaq 4** | **570,073** | **82.5%** | **0.41s** | **0.52s** |
-| **packmp2 c --zpaq 3** | **574,046** | **83.0%** | **0.35s** | **0.40s** |
-| **packmp2 c (dict+zstd)** | **623,056** | **90.1%** | **0.013s** | **0.007s** |
+| Method | Compressed | Ratio | Time |
+|--------|-----------|-------|------|
+| TCAM2 zstd+dict | 623,056 | 90.1% | ~0.01s |
+| zpaq level 3 | 574,046 | 83.1% | ~0.35s |
+| zpaq level 4 | 566,076 | 81.9% | ~0.46s |
+| zpaq level 5 | 561,834 | **81.3%** | ~2.37s |
 
 Key takeaways:
-- **zpaq m5** matches lpaq8 ratio (81.3% vs 81.2%) — full CM with context mixing
-- **zpaq m4** is **3.3× faster** than lpaq8 with only 1.2 points ratio gap (BWT+ISSE+mix)
-- **zpaq m3** is **3.9× faster** than lpaq8 at 83.0% ratio (BWT+mix)
-- **TCAM2 zstd+dict** is **100× faster** than lpaq8 for real-time use
+- **zpaq m5** matches lpaq8 ratio at 17% faster (custom method, no built-in overhead)
+- **zpaq m4** best speed/ratio sweet spot — only 27ms slower than m3 for +0.6% ratio
+- **TCAM2 zstd+dict** 100× faster than lpaq8 for real-time use
+- All levels pass byte-exact roundtrip on 19-file corpus
 
-zpaq levels use hand-tuned ZPAQL methods optimized for um2 audio data
-(levels 3-4 bypass built-in expansion for ~2× speedup at same ratio).
+### External compressor comparison (125.8 MB test file, original unpackmp2 README)
 
-All 9 test samples pass byte-exact roundtrip.
+| Pipeline | Options | Compressed size |
+|----------|---------|----------------|
+| unpackmp2 \| lpaq8 | 5 | 110.9 MB (84.0%) |
+| unpackmp2 \| 7z LZMA | ultra | 117.9 MB (89.4%) |
+| unpackmp2 \| 7z Bzip2 | ultra | 119.1 MB (90.3%) |
+| unpackmp2 \| 7z PPMd | ultra | 120.6 MB (91.4%) |
+| lpaq8 (no unpack) | 5 | 123.3 MB (93.5%) |
+
+## Changelog
+
+See [GitHub Releases](https://github.com/YadeWira/packMP2/releases).
+
+- **v0.6** — Thread-safety: heap allocation, fully reentrant. ZPAQL retune (matches lpaq8).
+- **v0.5** — Public C API, never-expand guard, zpaq backend, cross-platform libs.
+- **v0.4** — Optimized mode (SCFSI packing + scalefactor delta).
+- **v0.3** — TCAM2 zstd+dict compression.
+- **v0.2** — CLI switches, --zpaq flag.
+- **v0.1** — Initial: unpack/pack only.
 
 ## License
 
