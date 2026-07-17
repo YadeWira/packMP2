@@ -18,6 +18,10 @@ void extractFrameHeaderInfo(unpackmp2_t* u) {
            ISO formula: N = 12*bitrate*1000/freq (slots), bytes = (N+pad)*4.
            Compute as ((12000*br)/freq + pad) * 4 to preserve integer truncation. */
         u->hdrLength = ((12000 * u->hdrBitrate) / u->hdrFrequency + ((u->fb[2] & 0x02)>>1)) * 4;
+        /* Layer I: all subbands available (up to 32, capped at MAX_SBLIMIT=30) */
+        u->sbLimit = 30;  /* TODO: expand MAX_SBLIMIT to 32 for full Layer I */
+        u->jsBound = u->sbLimit;
+        u->jsBound = u->sbLimit;
     } else {
         u->hdrBitrate = FRMHDR_BITRATE[(u->hdrLsf==0 ? 0 : 1)][(u->fb[2] & 0xF0)>>4];
         /* Layer II: 1152 samples/frame, slot=1B. 144000 = 36*1000*1 */
