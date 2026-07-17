@@ -82,10 +82,46 @@ void packFrame(unpackmp2_t* u) {
     }
 }
 
+/* Re-encode one unpacked Layer I frame back into packed MP1 bitstream format.
+   Reference: ISO 11172-3 §2.4.2, amp11lib amp1dec.cpp (reverse). */
+void packFrame_L1(unpackmp2_t* u) {
+    int i, j, q;
+
+    u->fbpos = 32 + (u->hdrHasCrc ? 16 : 0);
+
+    /* Layer I: fixed 4-bit bit allocation per subband */
+    for (i = 0; i < u->sbLimit; i++) {
+        for (j = 0; j < ((i < u->jsBound) ? 2 : 1); j++) {
+            fbputbits(u, u->bitalloc2BITS[j][i], 4);
+        }
+    }
+
+    /* Layer I: no SCFSI — scalefactor always present if allocated */
+    for (i = 0; i < u->sbLimit; i++) {
+        for (j = 0; j < u->numChannels; j++) {
+            if (u->bitalloc2[j][i] != NULL) {
+                fbputbits(u, u->scaleBITS[j][0][i], 6);
+            }
+        }
+    }
+
+    /* Layer I: 12 samples per subband, individual coding */
+    for (q = 0; q < 12; q++) {
+        for (i = 0; i < u->sbLimit; i++) {
+            for (j = 0; j < ((i < u->jsBound) ? 2 : 1); j++) {
+                if (u->bitalloc2[j][i] != NULL) {
+                    fbputbits(u, u->sampleBITS[j][q][i],
+                              u->bitalloc2BITS[j][i] + 1);
+                }
+            }
+        }
+    }
+}
+
 /* Read um2 v2 from infile, repack to mp2, write to outfile.
    Preserves non-audio data (preamble, filler, trailer) for byte-exact roundtrip. */
 int pack_opt(FILE* infile, FILE* outfile, int opt) {
-    unpackmp2_t *um2_array = malloc(MAX_FRAMES_PER_BLOCK * sizeof(unpackmp2_t));
+    unpackmp2_t *um2_array = calloc(MAX_FRAMES_PER_BLOCK, sizeof(unpackmp2_t));
     if (!um2_array) return 1;
 
     /* check um2 v2 file header */
@@ -156,20 +192,33 @@ int pack_opt(FILE* infile, FILE* outfile, int opt) {
                         memcpy(u->fb, (u-1)->fb, 4);
                     }
                     b = ungetc(b, infile);
+                    /* Derive layer from fb[1] (needed for packFrame vs packFrame_L1) */
+                    u->hdrLayer = 4 - ((u->fb[1] & 0x06)>>1);
                     if (b == EOF) break;
                     extractFrameHeaderInfo(u);
                     framecount++;
                 }
                 if (i < u->sbLimit) {
-                    const sballoc_t*** alloc = ALLOCTABS[u->allocTabNum >> 1];
                     int b = getc(infile);
                     if (b == EOF) break;
-                    u->bitalloc2BITS[0][i] = b & 0x0F;
-                    u->bitalloc2[0][i] = alloc[i][b & 0x0F];
-                    if (i < u->jsBound) {
-                        u->bitalloc2BITS[1][i] = b >> 4;
-                        u->bitalloc2[1][i] = alloc[i][b >> 4];
-                    } else { u->bitalloc2[1][i] = u->bitalloc2[0][i]; }
+                    if (u->hdrLayer == 1) {
+                        /* Layer I: raw 4-bit bitalloc values (0-14).
+                           ALLOC[0]={3,5} used as dummy non-NULL pointer for bitalloc>0. */
+                        u->bitalloc2BITS[0][i] = b & 0x0F;
+                        u->bitalloc2[0][i] = (b & 0x0F) ? (sballoc_t*)&ALLOC[b & 0x0F] : NULL;
+                        if (i < u->jsBound) {
+                            u->bitalloc2BITS[1][i] = b >> 4;
+                            u->bitalloc2[1][i] = (b >> 4) ? (sballoc_t*)&ALLOC[b >> 4] : NULL;
+                        } else { u->bitalloc2[1][i] = u->bitalloc2[0][i]; }
+                    } else {
+                        const sballoc_t*** alloc = ALLOCTABS[u->allocTabNum >> 1];
+                        u->bitalloc2BITS[0][i] = b & 0x0F;
+                        u->bitalloc2[0][i] = alloc[i][b & 0x0F];
+                        if (i < u->jsBound) {
+                            u->bitalloc2BITS[1][i] = b >> 4;
+                            u->bitalloc2[1][i] = alloc[i][b >> 4];
+                        } else { u->bitalloc2[1][i] = u->bitalloc2[0][i]; }
+                    }
                 }
             }
         }
@@ -258,27 +307,52 @@ int pack_opt(FILE* infile, FILE* outfile, int opt) {
         }
 
         /* read samples */
-        for (bits = 3; bits <= 16; bits++) {
-            for (i = 0; i < MAX_SBLIMIT; i++) {
-                for (frm = 0; frm < framesInBlock; frm++) {
-                    unpackmp2_t* u = &um2_array[frm];
-                    if (i < u->sbLimit) {
-                        for (j = 0; j < ((i < u->jsBound) ? 2 : 1); j++) {
-                            const sballoc_t* bitalloc2 = u->bitalloc2[j][i];
-                            if ((bitalloc2 != NULL) && (bitalloc2->bits == bits)) {
-                                for (q = 0; q < 36; q += 3) {
-                                    u->sampleBITS[j][q][i] = getc(infile);
-                                    if (bitalloc2->bits > 8) {
-                                        u->sampleBITS[j][q][i] |= getc(infile)<<8;
-                                    }
-                                    if (bitalloc2->steps == 0) {
-                                        u->sampleBITS[j][q+1][i] = getc(infile);
-                                        if (bitalloc2->bits > 8) {
-                                            u->sampleBITS[j][q+1][i] |= getc(infile)<<8;
+        if (framesInBlock > 0 && um2_array[0].hdrLayer == 1) {
+            /* Layer I: 12 samples/subband, no grouping, bits=1..15 */
+            for (bits = 1; bits <= 15; bits++) {
+                for (i = 0; i < MAX_SBLIMIT; i++) {
+                    for (frm = 0; frm < framesInBlock; frm++) {
+                        unpackmp2_t* u = &um2_array[frm];
+                        if (i < u->sbLimit) {
+                            for (j = 0; j < ((i < u->jsBound) ? 2 : 1); j++) {
+                                if (u->bitalloc2[j][i] != NULL &&
+                                    u->bitalloc2BITS[j][i] + 1 == bits) {
+                                    for (q = 0; q < 12; q++) {
+                                        u->sampleBITS[j][q][i] = getc(infile);
+                                        if (bits > 8) {
+                                            u->sampleBITS[j][q][i] |= getc(infile)<<8;
                                         }
-                                        u->sampleBITS[j][q+2][i] = getc(infile);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            /* Layer II: 36 samples/subband, granule groups, bits=3..16 */
+            for (bits = 3; bits <= 16; bits++) {
+                for (i = 0; i < MAX_SBLIMIT; i++) {
+                    for (frm = 0; frm < framesInBlock; frm++) {
+                        unpackmp2_t* u = &um2_array[frm];
+                        if (i < u->sbLimit) {
+                            for (j = 0; j < ((i < u->jsBound) ? 2 : 1); j++) {
+                                const sballoc_t* bitalloc2 = u->bitalloc2[j][i];
+                                if ((bitalloc2 != NULL) && (bitalloc2->bits == bits)) {
+                                    for (q = 0; q < 36; q += 3) {
+                                        u->sampleBITS[j][q][i] = getc(infile);
                                         if (bitalloc2->bits > 8) {
-                                            u->sampleBITS[j][q+2][i] |= getc(infile)<<8;
+                                            u->sampleBITS[j][q][i] |= getc(infile)<<8;
+                                        }
+                                        if (bitalloc2->steps == 0) {
+                                            u->sampleBITS[j][q+1][i] = getc(infile);
+                                            if (bitalloc2->bits > 8) {
+                                                u->sampleBITS[j][q+1][i] |= getc(infile)<<8;
+                                            }
+                                            u->sampleBITS[j][q+2][i] = getc(infile);
+                                            if (bitalloc2->bits > 8) {
+                                                u->sampleBITS[j][q+2][i] |= getc(infile)<<8;
+                                            }
                                         }
                                     }
                                 }
@@ -294,10 +368,13 @@ int pack_opt(FILE* infile, FILE* outfile, int opt) {
             return 5;
         }
 
-        /* repack mp2 frames; read non-audio "filler" data back into the packed frames */
+        /* repack mp2/mp1 frames; read non-audio "filler" data back into the packed frames */
         for (frm = 0; frm < framesInBlock; frm++) {
             unpackmp2_t* u = &um2_array[frm];
-            packFrame(u);
+            if (u->hdrLayer == 1)
+                packFrame_L1(u);
+            else
+                packFrame(u);
             if (u->hdrLength > u->fbpos>>3) {
                 u->fb[u->fbpos>>3] |= getc(infile);
                 for (j = (u->fbpos>>3)+1; j < u->hdrLength; j++) {

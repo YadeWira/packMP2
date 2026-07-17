@@ -19,6 +19,12 @@ const short FRMHDR_BITRATE[2][16] = {
     {-1,  8, 16, 24, 32, 40, 48, 56, 64, 80, 96,112,128,144,160,-1}     /* MPEG-2 LSF LayerII */
 };
 
+/* Layer I bitrate tables (from ISO 11172-3, via amp11lib ratetab[2][0]) */
+const short FRMHDR_BITRATE_L1[2][16] = {
+    {-1, 32, 64, 96,128,160,192,224,256,288,320,352,384,416,448,-1},    /* MPEG-1 Layer I */
+    {-1, 32, 48, 56, 64, 80, 96,112,128,144,160,176,192,224,256,-1}     /* MPEG-2 LSF Layer I */
+};
+
 /* Bit allocation tables */
 const sballoc_t ALLOC[17] = {
     {3,5}, {5,7}, {9,10},

@@ -44,7 +44,8 @@ typedef unsigned int U32;   /* 32 bit unsigned integer */
 /* MPEG frame header lookup tables */
 extern const char  FRMHDR_LSF[4];
 extern const int   FRMHDR_FREQUENCY[4];
-extern const short FRMHDR_BITRATE[2][16];
+extern const short FRMHDR_BITRATE[2][16];      /* Layer II */
+extern const short FRMHDR_BITRATE_L1[2][16];   /* Layer I */
 
 /* Bit allocation tables */
 typedef struct {
@@ -76,6 +77,7 @@ typedef struct {
     unsigned short  hdrLength;    /* calculated using hdrBitrate and hdrFrequency, in Bytes */
     unsigned short  hdrBitrate;   /* translated using FRMHDR_BITRATE: (32...384) MPEG-1, (8...160) MPEG-2 */
     unsigned char   hdrLsf;       /* translated using FRMHDR_LSF: 0=MPEG-1, 1=MPEG-2 */
+    unsigned char   hdrLayer;     /* 1=Layer I, 2=Layer II, 3=Layer III (0=reserved) */
     unsigned char   hdrMode;      /* directly from header: 0=Stereo, 1=Joint stereo, 2=Dual channel, 3=Single channel (Mono) */
     unsigned char   hdrModeExt;   /* directly from header: use intensity stereo for bands: 0=4...31, 1=8...31, 2=12...31, 3=16...31 */
     unsigned char   hdrHasCrc;    /* directly from header (inverted): true=frame has CRC */

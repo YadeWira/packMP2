@@ -16,7 +16,7 @@ int tcam2_decompress_dict(FILE *in, FILE *out,
     if (stored) {
         /* verbatim passthrough (never-expand guard chose stored on encode) */
         if (csz != osz) { free(cmp); fprintf(stderr,"TCAM2: corrupt stored block\n"); return 1; }
-        fwrite(cmp,1,csz,out); free(cmp);
+        fwrite(cmp,1,csz,out); fflush(out); free(cmp);
         return 0;
     }
 
@@ -31,7 +31,7 @@ int tcam2_decompress_dict(FILE *in, FILE *out,
         act=ZSTD_decompressDCtx(dctx,data,dsz,cmp,csz);
     ZSTD_freeDCtx(dctx);free(cmp);
     if(ZSTD_isError(act)||act!=(long)dsz){free(data);return 1;}
-    fwrite(data,1,dsz,out);free(data);
+    fwrite(data,1,dsz,out);fflush(out);free(data);
     return 0;
 }
 
