@@ -82,6 +82,42 @@ void packFrame(unpackmp2_t* u) {
     }
 }
 
+/* Re-encode one unpacked Layer I frame back into packed MP1 bitstream format.
+   Reference: ISO 11172-3 §2.4.2, amp11lib amp1dec.cpp (reverse). */
+void packFrame_L1(unpackmp2_t* u) {
+    int i, j, q;
+
+    u->fbpos = 32 + (u->hdrHasCrc ? 16 : 0);
+
+    /* Layer I: fixed 4-bit bit allocation per subband */
+    for (i = 0; i < u->sbLimit; i++) {
+        for (j = 0; j < ((i < u->jsBound) ? 2 : 1); j++) {
+            fbputbits(u, u->bitalloc2BITS[j][i], 4);
+        }
+    }
+
+    /* Layer I: no SCFSI — scalefactor always present if allocated */
+    for (i = 0; i < u->sbLimit; i++) {
+        for (j = 0; j < u->numChannels; j++) {
+            if (u->bitalloc2[j][i] != NULL) {
+                fbputbits(u, u->scaleBITS[j][0][i], 6);
+            }
+        }
+    }
+
+    /* Layer I: 12 samples per subband, individual coding */
+    for (q = 0; q < 12; q++) {
+        for (i = 0; i < u->sbLimit; i++) {
+            for (j = 0; j < ((i < u->jsBound) ? 2 : 1); j++) {
+                if (u->bitalloc2[j][i] != NULL) {
+                    fbputbits(u, u->sampleBITS[j][q][i],
+                              u->bitalloc2BITS[j][i] + 1);
+                }
+            }
+        }
+    }
+}
+
 /* Read um2 v2 from infile, repack to mp2, write to outfile.
    Preserves non-audio data (preamble, filler, trailer) for byte-exact roundtrip. */
 int pack_opt(FILE* infile, FILE* outfile, int opt) {
@@ -156,6 +192,8 @@ int pack_opt(FILE* infile, FILE* outfile, int opt) {
                         memcpy(u->fb, (u-1)->fb, 4);
                     }
                     b = ungetc(b, infile);
+                    /* Derive layer from fb[1] (needed for packFrame vs packFrame_L1) */
+                    u->hdrLayer = 4 - ((u->fb[1] & 0x06)>>1);
                     if (b == EOF) break;
                     extractFrameHeaderInfo(u);
                     framecount++;
@@ -294,10 +332,13 @@ int pack_opt(FILE* infile, FILE* outfile, int opt) {
             return 5;
         }
 
-        /* repack mp2 frames; read non-audio "filler" data back into the packed frames */
+        /* repack mp2/mp1 frames; read non-audio "filler" data back into the packed frames */
         for (frm = 0; frm < framesInBlock; frm++) {
             unpackmp2_t* u = &um2_array[frm];
-            packFrame(u);
+            if (u->hdrLayer == 1)
+                packFrame_L1(u);
+            else
+                packFrame(u);
             if (u->hdrLength > u->fbpos>>3) {
                 u->fb[u->fbpos>>3] |= getc(infile);
                 for (j = (u->fbpos>>3)+1; j < u->hdrLength; j++) {

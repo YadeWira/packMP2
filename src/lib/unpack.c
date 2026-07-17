@@ -77,6 +77,55 @@ void unpackFrame(unpackmp2_t* u) {
     }
 }
 
+/* Decompose one packed Layer I MP1 frame from the frame buffer into metadata arrays.
+   Layer I differs from Layer II in: fixed 4-bit bit allocation, no SCFSI,
+   12 samples per subband (no granule grouping). Reference: amp11lib amp1dec.cpp */
+void unpackFrame_L1(unpackmp2_t* u) {
+    int i, j, q;
+
+    u->fbpos = 32 + (u->hdrHasCrc ? 16 : 0);    /* skip header and crc */
+
+    /* Layer I: fixed 4-bit bit allocation per subband (not table-driven) */
+    for (i = 0; i < u->sbLimit; i++) {
+        for (j = 0; j < ((i < u->jsBound) ? 2 : 1); j++) {
+            int bits = fbgetbits(u, 4);
+            u->bitalloc2BITS[j][i] = bits;
+            /* bits=0 means not allocated. Use ALLOC[bits] as dummy pointer
+               (ALLOC[0]={3,5} but we never dereference ->steps for Layer I) */
+            u->bitalloc2[j][i] = (bits > 0) ? (sballoc_t*)&ALLOC[bits] : NULL;
+            if (i >= u->jsBound) {
+                u->bitalloc2[1][i] = u->bitalloc2[0][i];
+                u->bitalloc2BITS[1][i] = u->bitalloc2BITS[0][i];
+            }
+        }
+    }
+
+    /* Layer I: no SCFSI — scalefactors always 6 bits for allocated subbands.
+       Write same value into all 3 slots for compatibility with Layer II format. */
+    for (i = 0; i < u->sbLimit; i++) {
+        for (j = 0; j < u->numChannels; j++) {
+            u->scfsiBITS[j][i] = 0;  /* no SCFSI in Layer I */
+            if (u->bitalloc2[j][i] != NULL) {
+                u->scaleBITS[j][0][i] = fbgetbits(u, 6);
+                u->scaleBITS[j][1][i] = u->scaleBITS[j][2][i] = u->scaleBITS[j][0][i];
+            }
+        }
+    }
+
+    /* Layer I: 12 samples per subband, individually coded (no granule groups).
+       Sample bit width = bitalloc + 1 (ISO 11172-3 §2.4.2.6). */
+    for (q = 0; q < 12; q++) {
+        for (i = 0; i < u->sbLimit; i++) {
+            for (j = 0; j < ((i < u->jsBound) ? 2 : 1); j++) {
+                const sballoc_t* bitalloc2 = u->bitalloc2[j][i];
+                if (bitalloc2 != NULL) {
+                    u->sampleBITS[j][q][i] = fbgetbits(u, u->bitalloc2BITS[j][i] + 1);
+                }
+            }
+        }
+    }
+}
+
 /* Read mp2 from infile, unpack to um2 v2 format, write to outfile.
    Preserves all non-audio data (preamble, filler, trailer) for
    byte-exact roundtrip. */
@@ -126,7 +175,8 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
                     }
                 } else {
                     if ( (b0 == 0xFF) &&
-                         (((b1&0xFE) == 0xFC) || ((b1&0xFE) == 0xF4)) &&    /* MPEG-1 or MPEG-2 Layer2 */
+                         (((b1&0xFE) == 0xFC) || ((b1&0xFE) == 0xF4) ||    /* MPEG-1 or MPEG-2 Layer II */
+                          ((b1&0xFE) == 0xFE) || ((b1&0xFE) == 0xF6)) &&   /* MPEG-1 or MPEG-2 Layer I */
                          ((b2&0xF0) != 0x00) &&    /* bitrate != free */
                          ((b2&0xF0) != 0xF0) &&    /* bitrate != bad */
                          ((b2&0x0C) != 0x0C)       /* frequency != reserved */
@@ -172,7 +222,10 @@ int unpack_opt(FILE* infile, FILE* outfile, int opt) {
                 perror("read mp2 frame");
                 break;
             }
-            unpackFrame(u);
+            if (u->hdrLayer == 1)
+                unpackFrame_L1(u);
+            else
+                unpackFrame(u);
 
             /* first frame: write um2 header + preamble (non-audio data before first frame) */
             if (framecount == 0) {
