@@ -6,7 +6,7 @@ CC      ?= gcc
 CXX     ?= g++
 AR      ?= ar
 CFLAGS  ?= -Wall -O3 -march=native -fomit-frame-pointer -s -I$(LIBDIR) -Ivendor/zstd -Ivendor/zstd/common -Ivendor/zstd/compress -Ivendor/zstd/decompress -Ivendor/zpaq -DXXH_NAMESPACE=ZSTD_ -DZSTD_LEGACY_SUPPORT=0 -DDYNAMIC_BMI2=0 -DZSTD_DISABLE_ASM
-CXXFLAGS ?= -Wall -O3 -march=native -Ivendor/zpaq
+CXXFLAGS ?= -Wall -O3 -march=native -fomit-frame-pointer -Ivendor/zpaq
 LDFLAGS ?=
 
 SRCDIR  = src
@@ -85,11 +85,13 @@ $(OBJDIR):
 	mkdir -p $(OBJDIR)
 
 # Windows cross-compile (full TCAM2 via vendored zstd + zpaq, static link)
+# NOTE: -lpthread removed — zpaq single-stream doesn't need threads;
+# winpthreads wrapper overhead was contributing to ~2x slowdown vs Linux.
 mingw:
-	$(MAKE) clean >/dev/null && $(MAKE) CC=i686-w64-mingw32-gcc CXX=i686-w64-mingw32-g++ TARGET=packmp2.exe LDFLAGS="-static -lpthread" all
+	$(MAKE) clean >/dev/null && $(MAKE) CC=i686-w64-mingw32-gcc CXX=i686-w64-mingw32-g++ TARGET=packmp2.exe LDFLAGS="-static" all
 
 mingw64:
-	$(MAKE) clean >/dev/null && $(MAKE) CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ TARGET=packmp2.exe LDFLAGS="-static -lpthread" all
+	$(MAKE) clean >/dev/null && $(MAKE) CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ TARGET=packmp2.exe LDFLAGS="-static" all
 
 # Cross-compiled static library for Windows consumers (e.g. packMP3)
 mingw-lib:
