@@ -6,6 +6,8 @@ packmp2.exe
 *.a
 *.dll
 *.so
+um2_delta_tool
+/zpaq-fast
 
 # IDE
 .vscode/

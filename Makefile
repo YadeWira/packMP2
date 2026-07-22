@@ -22,8 +22,20 @@ ZSTD_OBJ = $(patsubst $(ZSTD_DIR)/%.c,$(OBJDIR)/zstd_%.o,$(ZSTD_SRC))
 
 # Library sources
 LIB_SRC  = $(LIBDIR)/globals.c $(LIBDIR)/bitio.c $(LIBDIR)/frame.c \
-           $(LIBDIR)/pack.c $(LIBDIR)/unpack.c $(LIBDIR)/packmp2.c
+           $(LIBDIR)/pack.c $(LIBDIR)/unpack.c $(LIBDIR)/packmp2.c \
+           $(LIBDIR)/um2_delta_enc.c $(LIBDIR)/um2_delta_dec.c
 LIB_OBJ  = $(patsubst $(LIBDIR)/%.c,$(OBJDIR)/%.o,$(LIB_SRC))
+
+# Standalone um2_delta CLI tool (optional)
+UM2_DELTA_SRC = $(LIBDIR)/um2_delta.c
+UM2_DELTA_OBJ = $(patsubst $(LIBDIR)/%.c,$(OBJDIR)/%.o,$(UM2_DELTA_SRC))
+UM2_DELTA_BIN = um2_delta_tool
+
+# um2_delta CLI links against libpackmp2 (needs extractFrameHeaderInfo, ALLOC, etc.)
+# Note: renamed to um2_delta_tool to avoid conflict with src/lib/um2_delta.c → build/um2_delta.o
+um2_delta_tool: $(UM2_DELTA_OBJ) lib
+	$(CC) $(CFLAGS) $(UM2_DELTA_OBJ) -L. -lpackmp2 -lm -lpthread -o $@
+	@echo "  um2_delta_tool CLI ready (use: um2_delta_tool e/d [keyframe_interval])"
 
 # TCAM2 sources
 TCAM2_SRC = $(LIBDIR)/tcam2_enc.c $(LIBDIR)/tcam2_dec.c
@@ -38,7 +50,7 @@ MAIN_OBJ  = $(OBJDIR)/main.o
 TARGET    = packmp2
 ALL_OBJ   = $(MAIN_OBJ) $(LIB_OBJ) $(TCAM2_OBJ) $(ZSTD_OBJ) $(ZPAQ_OBJ)
 
-.PHONY: all lib clean dist mingw mingw64 mingw-lib mingw64-lib lite zpaq-fast
+.PHONY: all lib clean dist mingw mingw64 mingw-lib mingw64-lib lite zpaq-fast um2_delta_tool
 
 all: $(TARGET)
 
@@ -52,6 +64,11 @@ LIBOBJ = $(LIB_OBJ) $(TCAM2_OBJ) $(ZSTD_OBJ) $(ZPAQ_OBJ)
 lib: $(LIBOBJ)
 	$(AR) rcs libpackmp2.a $(LIBOBJ)
 	@echo "  libpackmp2.a ready ($(words $(LIBOBJ)) objects)"
+
+# Standalone um2_delta CLI tool (stdin/stdout delta encoding for um2 v1.3)
+um2_delta: $(UM2_DELTA_OBJ) lib
+	$(CC) $(CFLAGS) $(UM2_DELTA_OBJ) -L. -lpackmp2 -lm -lpthread -o $@
+	@echo "  um2_delta CLI ready (use: um2_delta e/d [keyframe_interval])"
 
 # Lite build objects (defined globally so prerequisites can see them)
 LITE_OBJ = $(MAIN_OBJ) $(LIB_OBJ) $(OBJDIR)/lite_stubs.o
@@ -103,7 +120,7 @@ mingw64-lib:
 	@echo "  -> libpackmp2.a (win64)"
 
 clean:
-	rm -rf $(OBJDIR) packmp2 packmp2.exe zpaq-fast
+	rm -rf $(OBJDIR) packmp2 packmp2.exe zpaq-fast um2_delta_tool
 
 # zpaq-fast: standalone CLI (single-stream, no journaling)
 zpaq-fast:
