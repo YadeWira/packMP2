@@ -132,6 +132,10 @@ static int emit_block_v2(FILE *out, unpackmp2_t *frames, int *hdrStored,
     }
 
     /* ---- Write samples (delta-encoded when not keyframe) ---- */
+    /* prev_abs tracks absolute values across frames within this block */
+    uint16_t prev_abs[2][36][MAX_SBLIMIT];
+    memset(prev_abs, 0, sizeof(prev_abs));
+
     if (isLayer1) {
         /* Layer I: 12 samples/subband, grouped by bit-width */
         for (int bits = 1; bits <= 15; bits++) {
@@ -141,10 +145,19 @@ static int emit_block_v2(FILE *out, unpackmp2_t *frames, int *hdrStored,
                     if (i < u->sbLimit) {
                         for (j = 0; j < ((i < u->jsBound) ? 2 : 1); j++) {
                             if (u->bitalloc2[j][i] != NULL && u->bitalloc2BITS[j][i] + 1 == bits) {
+                                int kf = is_keyframe(frm, keyframe_interval);
                                 for (q = 0; q < 12; q++) {
-                                    uint16_t val = u->sampleBITS[j][q][i];
+                                    uint16_t curr = u->sampleBITS[j][q][i];
+                                    uint16_t val;
+                                    if (kf) {
+                                        val = curr;
+                                    } else {
+                                        /* Signed delta vs previous frame (same position) */
+                                        val = (uint16_t)(int16_t)((int16_t)curr - (int16_t)prev_abs[j][q][i]);
+                                    }
                                     putc(val & 0xFF, out);
                                     if (bits > 8) putc((val >> 8) & 0xFF, out);
+                                    prev_abs[j][q][i] = curr;
                                 }
                             }
                         }
@@ -162,17 +175,35 @@ static int emit_block_v2(FILE *out, unpackmp2_t *frames, int *hdrStored,
                         for (j = 0; j < ((i < u->jsBound) ? 2 : 1); j++) {
                             const sballoc_t *ba = u->bitalloc2[j][i];
                             if (ba != NULL && ba->bits == bits) {
+                                int kf = is_keyframe(frm, keyframe_interval);
                                 for (q = 0; q < 36; q += 3) {
                                     uint16_t v0 = u->sampleBITS[j][q][i];
-                                    putc(v0 & 0xFF, out);
-                                    if (bits > 8) putc((v0 >> 8) & 0xFF, out);
+                                    uint16_t out0;
+                                    if (kf) {
+                                        out0 = v0;
+                                    } else {
+                                        out0 = (uint16_t)(int16_t)((int16_t)v0 - (int16_t)prev_abs[j][q][i]);
+                                    }
+                                    putc(out0 & 0xFF, out);
+                                    if (bits > 8) putc((out0 >> 8) & 0xFF, out);
+                                    prev_abs[j][q][i] = v0;
                                     if (ba->steps == 0) {
                                         uint16_t v1 = u->sampleBITS[j][q+1][i];
                                         uint16_t v2 = u->sampleBITS[j][q+2][i];
-                                        putc(v1 & 0xFF, out);
-                                        if (bits > 8) putc((v1 >> 8) & 0xFF, out);
-                                        putc(v2 & 0xFF, out);
-                                        if (bits > 8) putc((v2 >> 8) & 0xFF, out);
+                                        uint16_t out1, out2;
+                                        if (kf) {
+                                            out1 = v1;
+                                            out2 = v2;
+                                        } else {
+                                            out1 = (uint16_t)(int16_t)((int16_t)v1 - (int16_t)prev_abs[j][q+1][i]);
+                                            out2 = (uint16_t)(int16_t)((int16_t)v2 - (int16_t)prev_abs[j][q+2][i]);
+                                        }
+                                        putc(out1 & 0xFF, out);
+                                        if (bits > 8) putc((out1 >> 8) & 0xFF, out);
+                                        putc(out2 & 0xFF, out);
+                                        if (bits > 8) putc((out2 >> 8) & 0xFF, out);
+                                        prev_abs[j][q+1][i] = v1;
+                                        prev_abs[j][q+2][i] = v2;
                                     }
                                 }
                             }
@@ -493,30 +524,9 @@ int um2_delta_enc_file(FILE *in, FILE *out, int keyframe_interval) {
             }
         }
 
-        /* ---- Apply delta encoding to samples ---- */
-        int isLayer1 = (framesInBlock > 0 && frames[0].hdrLayer == 1);
-        int nSamples = isLayer1 ? 12 : 36;
-        uint16_t prev_abs[2][36][MAX_SBLIMIT];
-        memset(prev_abs, 0, sizeof(prev_abs));
-
-        for (frm = 0; frm < framesInBlock; frm++) {
-            int kf = is_keyframe(frm, keyframe_interval);
-
-            for (i = 0; i < frames[frm].sbLimit; i++) {
-                for (j = 0; j < ((i < frames[frm].jsBound) ? 2 : 1); j++) {
-                    if (frames[frm].bitalloc2[j][i] == NULL) continue;
-
-                    for (q = 0; q < nSamples; q++) {
-                        uint16_t curr = frames[frm].sampleBITS[j][q][i];
-                        if (!kf) {
-                            int16_t delta = (int16_t)curr - (int16_t)prev_abs[j][q][i];
-                            frames[frm].sampleBITS[j][q][i] = (uint16_t)(int16_t)delta;
-                        }
-                        prev_abs[j][q][i] = curr;
-                    }
-                }
-            }
-        }
+        /* ---- Pre-apply delta encoding moved into emit_block_v2 (inline).
+           prev_abs is per-block, tracked during write to maintain order
+           consistency with the decoder's read order. ---- */
 
         /* ---- Emit delta-encoded block ---- */
         emit_block_v2(out, frames, hdrStored, framesInBlock, keyframe_interval);
