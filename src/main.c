@@ -1,5 +1,5 @@
 /*  packMP2 — MPEG Audio Layer I/II lossless transform + compression
-    Unified CLI with switches for testing. v0.7
+    Unified CLI with switches for testing. v0.8
     Copyright (C) 2009-2010 Michael Henke, 2026 Tovy. GPLv3.
 */
 
@@ -19,7 +19,7 @@
 
 #include "zpaq_c.h"
 
-#define VERSION "0.7"
+#define VERSION "0.8"
 
 /* Forward declarations */
 extern int unpack(FILE *in, FILE *out);
