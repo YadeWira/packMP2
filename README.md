@@ -7,7 +7,8 @@ Layer II only — Layer I (MP1) files are rejected cleanly.
 codec: frame reordering (unpackmp2) + optimized compression (TCAM2).
 Integrated as a submodule/library in packMP3.
 
-Prebuilt binaries and static libs are in [GitHub Releases](https://github.com/YadeWira/packMP2/releases)
+Prebuilt binaries (`packmp2_<platform>_<arch>[.exe]`) and static libs
+(`libpackmp2-<platform>.a`) are in [GitHub Releases](https://github.com/YadeWira/packMP2/releases)
 for Linux x64, Windows x64, and Windows x86.
 
 **unpackmp2**: Reorders MP2 frames into the structured `um2` format —
@@ -87,27 +88,38 @@ Commands:
   d, decompress  tcam2 -> um2
   x, pipe        mp2 -> um2 -> tcam2 -> um2 -> mp2
 
-Options:
-  -i, --input F     Read from file (default: stdin)
-  -o, --output F    Write to file (default: stdout)
-  -q, --quiet       Suppress progress messages
-  -l, --level N     Compression level 1-9 (default: 1)
-  -O, --optimized   SCFSI packing + scalefactor delta
-  --zpaq N          Use zpaq context-mixing level 1-5 (best ratio)
-  --zpaq-method S   Raw ZPAQL method string (advanced)
-  -b, --benchmark   Report timing + ratio
-  -s, --stats       Show detailed statistics
-  --compare         Compress with/without dict, compare
-  --no-dict         Compress without dictionary
-  --dict FILE       Use external dictionary
-  --list FILE       Show file metadata
-  --test-all DIR    Batch test all .mp2 files in directory
-  --csv             CSV output for scripting
-  --raw             c/d passthrough (testing)
-  --verify          Auto roundtrip verification (pipe mode)
-  -V, --version     Print version
-  -h, --help        This help
+Full pipeline:
+  packmp2 x -i input.mp2 -o output.mp2 --verify
 ```
+
+### Command-line switches
+
+| Switch | Description |
+|--------|-------------|
+| `-i, --input F` | Read from file (default: stdin) |
+| `-o, --output F` | Write to file (default: stdout) |
+| `-q, --quiet` | Suppress progress messages |
+| `-l, --level N` | Compression level 1-9 (default: 1) |
+| `-O, --optimized` | SCFSI packing + scalefactor delta |
+| `--zpaq N` | Use zpaq context-mixing level 1-5 (best ratio) |
+| `--zpaq-method S` | Raw ZPAQL method string (advanced) |
+| `-b, --benchmark` | Report timing + ratio |
+| `-s, --stats` | Show detailed statistics |
+| `--compare` | Compress with/without dict, compare |
+| `--no-dict` | Compress without dictionary |
+| `--dict FILE` | Use external dictionary file |
+| `--list FILE` | Show file metadata |
+| `--test-all DIR` | Batch test all .mp2 files in directory |
+| `--csv` | CSV output for scripting |
+| `--raw` | c/d passthrough (testing) |
+| `--verify` | Auto roundtrip verification (pipe mode) |
+| `-V, --version` | Print version |
+| `-h, --help` | This help |
+
+> **Note**: packMP2 is primarily a **library** (consumed by packMP3 via `libpackmp2.a`).
+> The CLI is a development/testing tool exposing internal pipeline stages
+> (u/p/c/d/x) rather than end-user "compress/decompress" commands.
+> For the pact-standard end-user CLI, see packMP3/packJPG/packPNG.
 
 Full pipeline:
 ```sh
