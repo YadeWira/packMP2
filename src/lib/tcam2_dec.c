@@ -10,8 +10,8 @@ int tcam2_decompress_dict(FILE *in, FILE *out,
     {fprintf(stderr,"TCAM2: bad header\n");return 1;}
     int stored=getc(in);
     long osz=((long)getc(in)<<24)|((long)getc(in)<<16)|((long)getc(in)<<8)|getc(in);
-    long csz=0,ccap=65536;unsigned char*cmp=malloc(ccap);if(!cmp)return 1;int c;
-    while((c=getc(in))!=EOF){if(csz>=ccap){ccap*=2;cmp=realloc(cmp,ccap);}cmp[csz++]=c;}
+    size_t csz=0,ccap=65536;unsigned char*cmp=malloc(ccap);if(!cmp)return 1;int c;
+    while((c=getc(in))!=EOF){if(csz>=ccap){ccap*=2;cmp=realloc(cmp,ccap);if(!cmp)return 1;}cmp[csz++]=c;}
 
     if (stored) {
         /* verbatim passthrough (never-expand guard chose stored on encode) */

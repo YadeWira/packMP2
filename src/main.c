@@ -265,7 +265,7 @@ int main(int argc, char **argv) {
     if (compare && cmd=='c') {
         if (!quiet) fprintf(stderr,"packMP2: comparing dict vs no-dict...\n");
         /* Read input */
-        long isz=0,icap=65536;unsigned char*idata=malloc(icap);
+        size_t isz=0,icap=65536;unsigned char*idata=malloc(icap);
         int cc; while((cc=getc(in))!=EOF){if(isz>=icap){icap*=2;idata=realloc(idata,icap);}idata[isz++]=cc;}
         /* Compress with dict */
         FILE *f1=tmpfile(); FILE *in1=tmpfile();
@@ -299,7 +299,7 @@ int main(int argc, char **argv) {
                   if(zpaq_method) fprintf(stderr,"packMP2: compressing (zpaq method %s)...\n",zpaq_method);
                   else fprintf(stderr,"packMP2: compressing (zpaq level %d)...\n",zpaq_level);
                 }
-                long isz=0,icap=65536;unsigned char*idata=malloc(icap);
+                size_t isz=0,icap=65536;unsigned char*idata=malloc(icap);
                 while((cc=getc(in))!=EOF){if(isz>=icap){icap*=2;idata=realloc(idata,icap);}idata[isz++]=cc;}
                 unsigned char*zout=NULL;size_t zsz=0;
                 if(zpaq_method) rc=zpaq_compress_method(idata,isz,&zout,&zsz,zpaq_method);
@@ -322,7 +322,7 @@ int main(int argc, char **argv) {
                 if(first==EOF){fprintf(stderr,"packMP2: empty input\n");rc=1;}
                 else if(first==0x37||zpaq_level>0||zpaq_method){  /* '7' = zpaq magic */
                     if(!quiet)fprintf(stderr,"packMP2: decompressing (zpaq)...\n");
-                    long isz=0,icap=65536;unsigned char*idata=malloc(icap);
+                    size_t isz=0,icap=65536;unsigned char*idata=malloc(icap);
                     idata[isz++]=(unsigned char)first;
                     while((cc=getc(in))!=EOF){if(isz>=icap){icap*=2;idata=realloc(idata,icap);}idata[isz++]=cc;}
                     unsigned char*zout=NULL;size_t zsz=0;
@@ -340,15 +340,15 @@ int main(int argc, char **argv) {
             } break;
         case 'x': {
             if(!quiet)fprintf(stderr,"packMP2: pipeline...\n");
-            long isz=0,icap=65536;unsigned char*idata=malloc(icap);
+            size_t isz=0,icap=65536;unsigned char*idata=malloc(icap);
             while((cc=getc(in))!=EOF){if(isz>=icap){icap*=2;idata=realloc(idata,icap);}idata[isz++]=cc;}
             FILE *mp2_f=tmpfile();fwrite(idata,1,isz,mp2_f);rewind(mp2_f);
             FILE *um2_f=tmpfile(),*tc_f=tmpfile(),*um2_r=tmpfile();
             int stored=0; /* pipeline-level never-expand: skip compress if no gain vs original mp2 */
             if(!(rc=optimized?unpack_optimized(mp2_f,um2_f):unpack(mp2_f,um2_f))){rewind(um2_f);
             if(zpaq_level>0 || zpaq_method){
-                long um2sz=0;unsigned char*um2data=NULL;
-                {long cap=65536;um2data=malloc(cap);
+                size_t um2sz=0;unsigned char*um2data=NULL;
+                {size_t cap=65536;um2data=malloc(cap);
                  while((cc=getc(um2_f))!=EOF){if(um2sz>=cap){cap*=2;um2data=realloc(um2data,cap);}um2data[um2sz++]=cc;}}
                 unsigned char*zout=NULL;size_t zsz=0;
                 if(zpaq_method) rc=zpaq_compress_method(um2data,um2sz,&zout,&zsz,zpaq_method);

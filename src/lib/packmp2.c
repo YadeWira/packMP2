@@ -29,7 +29,7 @@ static int validate_opts(const packmp2_opts *opts, char msg[256]) {
 
 /* Read entire FILE* into malloc'd buffer. *len receives size. */
 static unsigned char *slurp_file(FILE *f, size_t *len) {
-    long cap=65536, sz=0; unsigned char *d=malloc(cap); if(!d) return NULL;
+    size_t cap=65536, sz=0; unsigned char *d=malloc(cap); if(!d) return NULL;
     int c;
     while((c=getc(f))!=EOF){if(sz>=cap){cap*=2;d=realloc(d,cap);}d[sz++]=c;}
     *len=sz;
