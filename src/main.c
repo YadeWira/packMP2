@@ -354,7 +354,8 @@ int main(int argc, char **argv) {
                 if(zpaq_method) rc=zpaq_compress_method(um2data,um2sz,&zout,&zsz,zpaq_method);
                 else rc=zpaq_compress(um2data,um2sz,&zout,&zsz,zpaq_level);
                 if(!rc){
-                    if((long)zsz >= isz){stored=1;fwrite(idata,1,isz,out);free(zout);}
+                    if((long)zsz >= isz){stored=1;fwrite(idata,1,isz,out);free(zout);
+                    if(!quiet)fprintf(stderr,"packMP2: compressed >= original — stored verbatim (%.1f%%)\n",100.0*zsz/isz);}
                     else{
                         unsigned char*dec=NULL;size_t dsz=0;
                         if(!(rc=zpaq_decompress(zout,zsz,&dec,&dsz))){
@@ -369,7 +370,8 @@ int main(int argc, char **argv) {
             } else {
             if(!(rc=tcam2_compress(um2_f,tc_f,level))){
             fseek(tc_f,0,SEEK_END); long tc_sz=ftell(tc_f); rewind(tc_f);
-            if(tc_sz >= isz){stored=1;fwrite(idata,1,isz,out);}
+            if(tc_sz >= isz){stored=1;fwrite(idata,1,isz,out);
+            if(!quiet)fprintf(stderr,"packMP2: compressed >= original — stored verbatim (%.1f%%)\n",100.0*tc_sz/isz);}
             else if(!(rc=tcam2_decompress(tc_f,um2_r))){rewind(um2_r);
             rc=optimized?pack_optimized(um2_r,out):pack(um2_r,out);}}}
             }
